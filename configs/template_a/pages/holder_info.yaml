@@ -1,0 +1,52 @@
+page_type: holder_info
+
+fields:
+  holder_name:
+    anchors:
+      - "Họ và tên"
+      - "Ông"
+      - "Bà"
+      - "Người sử dụng đất"
+      - "Nay chứng nhận cho"
+      - "chứng nhận cho"
+    directions:
+      - right
+      - below
+    max_distance: 400
+    same_line_preferred: true
+
+
+  birthday:
+    anchors:
+      - "Sinh năm"
+      - "Năm sinh"
+      - "Ngày sinh"
+      - "Ngày"
+    directions:
+      - right
+    max_distance: 250
+    regex: '\d{4}'
+    same_line_preferred: true
+    y_max: 950
+  identity_card_number:
+    anchors:
+      - "CMND số"
+      - "CCCD số"
+    directions:
+      - right
+    max_distance: 250
+    regex: '\d{4}'
+    same_line_preferred: true #ưu tiên candidate nằm cùng dòng với anchor
+  address:
+    anchors:
+      - "Địa chỉ thường trú"
+      - "Nơi thường trú"
+      - "Địa chỉ"
+    directions:
+      - right
+      - below
+    max_distance: 600
+    multiline: true
+    
+
+  

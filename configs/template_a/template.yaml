@@ -1,0 +1,30 @@
+template_id: template_a
+template_name: "Giấy chứng nhận mẫu A"
+version: "1.0"
+
+page_types:
+  - holder_info
+  - land_info
+
+page_detection:
+  holder_info:
+    keywords:
+      - "Người sử dụng đất"
+      - "Chủ sở hữu"
+      - "Họ và tên"
+      - "Địa chỉ"
+      - "Nơi thường trú"
+      - "Bà"
+      - "Ông"
+    min_keyword_matches: 1
+
+  land_info:
+    keywords:
+      - "Thửa đất"
+      - "Tờ bản đồ"
+      - "Số thửa"
+      - "Diện tích"
+      - "Mục đích sử dụng"
+      - "Thời hạn"
+      - "Hình thức"
+    min_keyword_matches: 2

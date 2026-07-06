@@ -1,0 +1,35 @@
+page_type: land_info
+
+fields:
+  parcel_number:
+    anchors:
+      - "Thửa đất số"
+      - "Số thửa"
+      - "S6 th&a"
+      - "S6 thửa"
+      - "Số th&a"
+    directions:
+      - right
+    max_distance: 300
+    regex: '\d+(?:[\-\.\/]\d+)?'
+
+  map_sheet_number:
+    anchors:
+      - "Tờ bản đồ số"
+      - "Số tờ bản đồ"
+      - "T ban d sö"
+    directions:
+      - right
+    max_distance: 300
+    regex: '\d+(?:[\-\.\/]\d+)?'
+
+  area_m2:
+    anchors:
+      - "Khu đất diện tích"
+      - "Diện tích"
+      - "Diện tích thửa đất"
+    directions:
+      - right
+      - below
+    max_distance: 400
+    regex: '\d+(?:[.,]\d+)?'
