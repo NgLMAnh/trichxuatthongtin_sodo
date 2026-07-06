@@ -14,39 +14,9 @@ def correct_ocr_typos(val):
     if not val:
         return ""
     
-    # 1. Character level corrections FIRST (European diacritics -> Vietnamese)
-    #    These are always safe because ö, ä, ü, ë, ï are not valid Vietnamese
-    char_replacements = {
-        'ö': 'ô',
-        'ä': 'á',
-        'ü': 'ủ',
-        'ë': 'ê',
-        'ï': 'í',
-        'Ö': 'Ô',
-        'Ä': 'Á',
-        'Ü': 'Ủ',
-        'Ë': 'Ê',
-        'Ï': 'Í',
-    }
-    for char, replacement in char_replacements.items():
-        val = val.replace(char, replacement)
-    
-    # 2. Safe multi-word corrections only (low risk of false positives)
-    safe_replacements = {
-        r'\bthanh pho\b': 'Thành phố',
-        r'\bthi tran\b': 'Thị trấn',
-        r'\bkhu pho\b': 'Khu phố',
-        r'\bkhu dat\b': 'Khu đất',
-        r'\bdien tich\b': 'Diện tích',
-        r'\bban do\b': 'Bản đồ',
-        r'\bvi tri\b': 'Vị trí',
-        r'\bchung nhan\b': 'Chứng nhận',
-    }
-    for pattern, replacement in safe_replacements.items():
-        val = re.sub(pattern, replacement, val, flags=re.IGNORECASE)
-    
-    # 3. Clean up single dots between letters (OCR artifact from spaces)
-    #    e.g., "Cu.Xa" -> "Cu Xa", but NOT "18/2/3.5" (number.number)
+    # VietOCR is highly accurate for Vietnamese diacritics.
+    # We only need to clean up minor artifacts like single dots between letters
+    # e.g., "Cu.Xa" -> "Cu Xa", but NOT "18/2/3.5" (number.number)
     val = re.sub(r'(?<=[A-Za-zÀ-ỹ])\.(?=[A-Za-zÀ-ỹ])', ' ', val)
     
     return val
@@ -84,6 +54,15 @@ def normalize_area(area_str):
             return None
     return None
 
+def clean_name(val):
+    if not val:
+        return ""
+    # Strip "sinh năm" or "sn" and anything after it from names
+    val = re.sub(r'(?i)\b(?:sinh năm|năm sinh|sn)\b.*$', '', val)
+    # Use generic clean up
+    val = clean_name_or_address(val)
+    return val
+
 def normalize_fields(extracted_data):
     """
     Applies appropriate normalization functions to extracted fields.
@@ -92,13 +71,23 @@ def normalize_fields(extracted_data):
     
     # 1. holder_name
     if "holder_name" in extracted_data:
-        normalized["holder_name"] = clean_name_or_address(extracted_data["holder_name"])
+        normalized["holder_name"] = clean_name(extracted_data["holder_name"])
         
     # 2. address
     if "address" in extracted_data:
         normalized["address"] = clean_name_or_address(extracted_data["address"])
         
-    # 3. parcel_number
+    # 3. id_number (CCCD/CMND)
+    if "id_number" in extracted_data:
+        val = extracted_data["id_number"]
+        if val:
+            # ID number should only contain digits and possibly some letters (for passport)
+            val = re.sub(r'[^a-zA-Z0-9]', '', val)
+            normalized["id_number"] = val if val else None
+        else:
+            normalized["id_number"] = None
+        
+    # 4. parcel_number
     if "parcel_number" in extracted_data:
         val = extracted_data["parcel_number"]
         if val:
@@ -109,7 +98,7 @@ def normalize_fields(extracted_data):
         else:
             normalized["parcel_number"] = None
         
-    # 4. map_sheet_number
+    # 5. map_sheet_number
     if "map_sheet_number" in extracted_data:
         val = extracted_data["map_sheet_number"]
         if val:
@@ -119,11 +108,11 @@ def normalize_fields(extracted_data):
         else:
             normalized["map_sheet_number"] = None
         
-    # 5. area_m2
+    # 6. area_m2
     if "area_m2" in extracted_data:
         normalized["area_m2"] = normalize_area(extracted_data["area_m2"])
         
-    # 6. birthday
+    # 7. birthday
     if "birthday" in extracted_data:
         val = extracted_data["birthday"]
         normalized["birthday"] = normalize_text(val) if val else None

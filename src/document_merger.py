@@ -19,7 +19,16 @@ def get_value_score(val, field_name):
     return score
 
 def is_better_value(new_val, old_val, field_name):
-    return get_value_score(new_val, field_name) > get_value_score(old_val, field_name)
+    old_score = get_value_score(old_val, field_name)
+    new_score = get_value_score(new_val, field_name)
+    
+    # If we already have a reasonably good value (score >= 5) from an earlier page,
+    # we KEEP it. This prevents overwriting the main holder (Mục I on page 1) 
+    # with buyers/sellers (Mục III/IV on page 2).
+    if old_score >= 5:
+        return False
+        
+    return new_score > old_score
 
 def merge_pages(document_id, page_results):
     """
@@ -32,6 +41,7 @@ def merge_pages(document_id, page_results):
         "document_id": document_id,
         "holder": {
             "name": None,
+            "id_number": None,
             "address": None,
             "birthday": None
         },
@@ -52,6 +62,11 @@ def merge_pages(document_id, page_results):
                 old_val = doc_json["holder"]["name"]
                 if is_better_value(new_val, old_val, "name"):
                     doc_json["holder"]["name"] = new_val
+            if "id_number" in fields:
+                new_val = fields["id_number"]
+                old_val = doc_json["holder"]["id_number"]
+                if is_better_value(new_val, old_val, "id_number"):
+                    doc_json["holder"]["id_number"] = new_val
             if "address" in fields:
                 new_val = fields["address"]
                 old_val = doc_json["holder"]["address"]

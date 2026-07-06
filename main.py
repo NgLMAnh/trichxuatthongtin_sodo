@@ -1,4 +1,5 @@
 import os
+os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
 import sys
 import json
 import yaml
@@ -121,7 +122,9 @@ def main():
                         "fields": normalized_fields
                     })
             except Exception as e:
+                import traceback
                 print(f"    -> Error processing page {img_name}: {e}")
+                traceback.print_exc()
                 
         # 5. Merge results for this document
         doc_json = merge_pages(doc_id, page_results)

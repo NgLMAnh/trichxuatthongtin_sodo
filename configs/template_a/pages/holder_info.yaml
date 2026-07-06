@@ -12,7 +12,7 @@ fields:
     directions:
       - right
       - below
-    max_distance: 400
+    max_distance: 600
     same_line_preferred: true
 
 
@@ -28,14 +28,16 @@ fields:
     regex: '\d{4}'
     same_line_preferred: true
     y_max: 950
-  identity_card_number:
+  id_number:
     anchors:
       - "CMND số"
       - "CCCD số"
+      - "CMND"
+      - "CCCD"
     directions:
       - right
     max_distance: 250
-    regex: '\d{4}'
+    regex: '\d{9,12}'
     same_line_preferred: true #ưu tiên candidate nằm cùng dòng với anchor
   address:
     anchors:

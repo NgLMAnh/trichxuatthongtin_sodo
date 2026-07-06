@@ -13,10 +13,12 @@ def check_multiline_extension(first_box, ocr_results, max_vertical_gap=45, max_l
         "thửa đất", "tờ bản đồ", "diện tích", "mục ", "ngày", "năm",
         "tổng", "kết cấu", "số tầng", "hình thức", "chứng nhận",
         "ủy ban", "chủ tịch", "ghi chú", "hồ sơ", "sinh năm",
+        "kích thước", "kèm như sau", "như sau", "sơ đồ", "bản đồ",
         # Raw OCR (non-accented) equivalents
         "thua dat", "to ban do", "dien tich", "muc ", "ngay", "nam",
         "tong", "ket cau", "so tang", "hinh thuc", "chung nhan",
         "uy ban", "chu tich", "ghi chu", "ho so", "sinh nam",
+        "kich thuoc", "kem nhu sau", "nhu sau", "so do", "ban do",
         # Common section headers
         "muc ii", "muc iii", "muc iv", "kt.", "t.m ",
         "cmnd", "cccd", "giay ch",
