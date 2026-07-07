@@ -8,19 +8,11 @@ if sys.stdout.encoding != 'utf-8':
 
 import json
 import yaml
-
-import re
+from src.pipeline import DocumentPipeline
 
 # Disable oneDNN to avoid incompatibility issues on Windows CPU
 os.environ["FLAGS_use_onednn"] = "0"
 os.environ["FLAGS_use_mkldnn"] = "0"
-
-
-from src.ocr_engine import OCREngine
-from src.spatial_rules import normalize_text
-from src.extractors import extract_fields
-from src.normalizers import normalize_fields
-from src.document_merger import merge_pages
 
 def load_yaml(path):
     if not os.path.exists(path):
@@ -30,20 +22,22 @@ def load_yaml(path):
 
 def main():
     base_dir = os.path.dirname(os.path.abspath(__file__))
-    configs_dir = os.path.join(base_dir, "configs", "template_a")
+    configs_dir = os.path.join(base_dir, "configs")
     documents_dir = os.path.join(base_dir, "data", "documents")
     outputs_dir = os.path.join(base_dir, "outputs", "predictions")
+    md_dir = os.path.join(base_dir, "outputs", "markdowns")
     
     os.makedirs(outputs_dir, exist_ok=True)
+    os.makedirs(md_dir, exist_ok=True)
     
-    # 1. Load configuration
+    # 1. Load pipeline configuration
     try:
-        template_config = load_yaml(os.path.join(configs_dir, "template.yaml"))
+        pipeline_config = load_yaml(os.path.join(configs_dir, "pipeline.yaml"))
     except Exception as e:
-        print(f"Error loading template config: {e}")
+        print(f"Error loading pipeline config: {e}")
         sys.exit(1)
         
-    print(f"Loaded template: {template_config.get('template_name')} (ID: {template_config.get('template_id')})")
+    print(f"Loaded pipeline configuration: {pipeline_config.get('pipeline', {}).get('name')}")
     
     # 2. Find document folders
     if not os.path.exists(documents_dir):
@@ -58,16 +52,17 @@ def main():
         
     print(f"Found {len(doc_folders)} documents to process: {', '.join(doc_folders)}")
     
-    # 3. Initialize OCREngine
-    print("\nInitializing OCR Engine (PaddleOCR)... This might take a few seconds.")
+    # 3. Initialize Pipeline
+    print("\nInitializing Document Pipeline (PPStructure + OCR + Extraction)...")
     try:
-        # Using CPU (gpu=False) for compatibility
-        ocr_engine = OCREngine(languages=['vi'], gpu=False)
+        pipeline = DocumentPipeline(pipeline_config)
     except Exception as e:
-        print(f"Error initializing OCR Engine: {e}")
+        import traceback
+        traceback.print_exc()
+        print(f"Error initializing Pipeline: {e}")
         sys.exit(1)
         
-    print("OCR Engine ready.\n")
+    print("Pipeline ready.\n")
     print("=" * 80)
     print(" PROCESSING DOCUMENTS")
     print("=" * 80)
@@ -75,58 +70,45 @@ def main():
     # 4. Process each document folder
     for doc_id in doc_folders:
         doc_path = os.path.join(documents_dir, doc_id)
-        image_files = sorted([f for f in os.listdir(doc_path) if f.lower().endswith(('.png', '.jpg', '.jpeg'))])
+        image_files = sorted([os.path.join(doc_path, f) for f in os.listdir(doc_path) if f.lower().endswith(('.png', '.jpg', '.jpeg'))])
         
         if not image_files:
             print(f"Skipping {doc_id}: No image files found.")
             continue
             
         print(f"\nProcessing document: {doc_id} ({len(image_files)} pages)")
-        page_results_dict = {}
         
-        for img_name in image_files:
-            img_path = os.path.join(doc_path, img_name)
-            print(f"  - Running OCR on: {img_name}...")
-            
-            try:
-                # Perform OCR
-                ocr_results = ocr_engine.run_ocr(img_path)
-                page_results_dict[img_name] = ocr_results
-            except Exception as e:
-                import traceback
-                print(f"    -> Error processing page {img_name}: {e}")
-                traceback.print_exc()
-                
-        # 5. Format as Markdown
-        from src.text_formatter import format_as_markdown
-        md_text = format_as_markdown(page_results_dict)
-        
-        # Save Markdown
-        md_dir = os.path.join(base_dir, "outputs", "markdowns")
-        os.makedirs(md_dir, exist_ok=True)
-        md_file = os.path.join(md_dir, f"{doc_id}.md")
         try:
+            # Chạy toàn bộ pipeline cho document
+            doc_json, page_blocks_dict = pipeline.process_document(doc_id, image_files)
+            
+            # Format as structured Markdown for RAG
+            from src.text_formatter import format_as_markdown
+            md_text = format_as_markdown(page_blocks_dict, document_id=doc_id, doc_json=doc_json)
+            
+            # Save Markdown
+            md_file = os.path.join(md_dir, f"{doc_id}.md")
             with open(md_file, "w", encoding="utf-8") as f:
                 f.write(md_text)
             print(f"    -> Saved markdown to: {md_file}")
-        except Exception as e:
-            print(f"    -> Error saving markdown for {doc_id}: {e}")
-        
-        # 6. Extract using LLM (RAG)
-        print("  - Extracting information using LLM...")
-        from src.llm_extractor import extract_information
-        doc_json = extract_information(doc_id, md_text)
-        
-        if doc_json:
-            # Save output JSON
+            
+            # (Optional) Extract using LLM - Vẫn giữ để so sánh hoặc làm fallback
+            # print("  - Extracting information using LLM...")
+            # from src.llm_extractor import extract_information
+            # llm_json = extract_information(doc_id, md_text)
+            
+            # Save output JSON (từ rule-based pipeline)
             output_file = os.path.join(outputs_dir, f"{doc_id}.json")
-            try:
-                with open(output_file, "w", encoding="utf-8") as f:
-                    json.dump(doc_json, f, ensure_ascii=False, indent=2)
-                print(f"\nSUCCESS: Document {doc_id} result saved to: {output_file}")
-                print(json.dumps(doc_json, ensure_ascii=False, indent=2))
-            except Exception as e:
-                print(f"Error saving result for {doc_id}: {e}")
+            with open(output_file, "w", encoding="utf-8") as f:
+                json.dump(doc_json, f, ensure_ascii=False, indent=2)
+            
+            print(f"\nSUCCESS: Document {doc_id} result saved to: {output_file}")
+            print(json.dumps(doc_json, ensure_ascii=False, indent=2))
+                
+        except Exception as e:
+            import traceback
+            print(f"Error processing document {doc_id}: {e}")
+            traceback.print_exc()
             
     print("\n" + "=" * 80)
     print(" PIPELINE COMPLETED")

@@ -1,0 +1,96 @@
+# Pipeline Configuration cho CPU
+pipeline:
+  name: "RedBook Extraction Pipeline"
+  version: "2.0"
+
+layout:
+  model: "PP-DocLayout-L"
+  use_gpu: false
+  enable_mkldnn: false
+  show_log: false
+
+ocr_detection:
+  use_gpu: false
+  use_angle_cls: true
+  enable_mkldnn: false
+  lang: "vi"
+  show_log: false
+
+ocr_recognition:
+  model_name: "vgg_transformer"
+  device: "cpu"
+  pretrained: false
+
+section_detection:
+  holder_info:
+    keywords: ["Mục I", "Mục III"]
+  land_info:
+    keywords: ["Mục II"]
+
+field_extraction:
+  holder_name:
+    anchors:
+      - "Ông"
+      - "Bà"
+      - "Họ và tên"
+      - "chứng nhận cho"
+      - "Nay chứng nhận cho"
+      - "Chủ sở hữu"
+      - "Người sử dụng đất"
+    target_sections: ["holder_info"]
+    direction: ["right", "below"]
+    max_distance_y: 50
+    same_line_preferred: true
+  
+  birthday:
+    anchors:
+      - "Sinh năm"
+      - "Năm sinh"
+    target_sections: ["holder_info"]
+    direction: ["right"]
+    regex: "\\d{4}"
+    same_line_preferred: true
+
+  id_number:
+    anchors:
+      - "CMND số"
+      - "CCCD số"
+      - "CMND"
+      - "CCCD"
+    target_sections: ["holder_info"]
+    direction: ["right"]
+    regex: "\\d{9,12}"
+    same_line_preferred: true
+
+  address:
+    anchors:
+      - "Địa chỉ thường trú"
+      - "Nơi thường trú"
+      - "Địa chỉ"
+    target_sections: ["holder_info", "land_info"]
+    direction: ["right", "below"]
+    multiline: true
+
+  parcel_number:
+    anchors:
+      - "Số thửa"
+      - "Thửa đất số"
+    target_sections: ["land_info"]
+    direction: ["right", "below"]
+    regex: "\\d+(?:[\\-\\.\\/]\\d+)?"
+
+  map_sheet_number:
+    anchors:
+      - "Tờ bản đồ số"
+      - "Số tờ bản đồ"
+    target_sections: ["land_info"]
+    direction: ["right"]
+    regex: "\\d+(?:[\\-\\.\\/]\\d+)?"
+
+  area_m2:
+    anchors:
+      - "Khu đất diện tích"
+      - "Diện tích"
+    target_sections: ["land_info"]
+    direction: ["right", "below"]
+    regex: "\\d+(?:[.,]\\d+)?"

@@ -57,43 +57,41 @@ def merge_pages(document_id, page_results):
         ptype = page.get("page_type")
         fields = page.get("fields", {})
         
-        if ptype == "holder_info":
-            if "holder_name" in fields:
-                new_val = fields["holder_name"]
-                old_val = doc_json["holder"]["name"]
-                if is_better_value(new_val, old_val, "name"):
-                    doc_json["holder"]["name"] = new_val
-            if "id_number" in fields:
-                new_val = fields["id_number"]
-                old_val = doc_json["holder"]["id_number"]
-                if is_better_value(new_val, old_val, "id_number"):
-                    doc_json["holder"]["id_number"] = new_val
-            if "address" in fields:
-                new_val = fields["address"]
-                old_val = doc_json["holder"]["address"]
-                if is_better_value(new_val, old_val, "address"):
-                    doc_json["holder"]["address"] = new_val
-            if "birthday" in fields:
-                new_val = fields["birthday"]
-                old_val = doc_json["holder"]["birthday"]
-                if is_better_value(new_val, old_val, "birthday"):
-                    doc_json["holder"]["birthday"] = new_val
-                    
-        elif ptype == "land_info":
-            if "parcel_number" in fields:
-                new_val = fields["parcel_number"]
-                old_val = doc_json["land_parcel"]["parcel_number"]
-                if is_better_value(new_val, old_val, "parcel_number"):
-                    doc_json["land_parcel"]["parcel_number"] = new_val
-            if "map_sheet_number" in fields:
-                new_val = fields["map_sheet_number"]
-                old_val = doc_json["land_parcel"]["map_sheet_number"]
-                if is_better_value(new_val, old_val, "map_sheet_number"):
-                    doc_json["land_parcel"]["map_sheet_number"] = new_val
-            if "area_m2" in fields:
-                new_val = fields["area_m2"]
-                old_val = doc_json["land_parcel"]["area_m2"]
-                if is_better_value(new_val, old_val, "area_m2"):
-                    doc_json["land_parcel"]["area_m2"] = new_val
+        if "holder_name" in fields:
+            new_val = fields["holder_name"]
+            old_val = doc_json["holder"]["name"]
+            if is_better_value(new_val, old_val, "name"):
+                doc_json["holder"]["name"] = new_val
+        if "id_number" in fields:
+            new_val = fields["id_number"]
+            old_val = doc_json["holder"]["id_number"]
+            if is_better_value(new_val, old_val, "id_number"):
+                doc_json["holder"]["id_number"] = new_val
+        if "address" in fields:
+            new_val = fields["address"]
+            old_val = doc_json["holder"]["address"]
+            if is_better_value(new_val, old_val, "address"):
+                doc_json["holder"]["address"] = new_val
+        if "birthday" in fields:
+            new_val = fields["birthday"]
+            old_val = doc_json["holder"]["birthday"]
+            if is_better_value(new_val, old_val, "birthday"):
+                doc_json["holder"]["birthday"] = new_val
+
+        if "parcel_number" in fields:
+            new_val = fields["parcel_number"]
+            old_val = doc_json["land_parcel"]["parcel_number"]
+            if is_better_value(new_val, old_val, "parcel_number"):
+                doc_json["land_parcel"]["parcel_number"] = new_val
+        if "map_sheet_number" in fields:
+            new_val = fields["map_sheet_number"]
+            old_val = doc_json["land_parcel"]["map_sheet_number"]
+            if is_better_value(new_val, old_val, "map_sheet_number"):
+                doc_json["land_parcel"]["map_sheet_number"] = new_val
+        if "area_m2" in fields:
+            new_val = fields["area_m2"]
+            old_val = doc_json["land_parcel"]["area_m2"]
+            if is_better_value(new_val, old_val, "area_m2"):
+                doc_json["land_parcel"]["area_m2"] = new_val
                     
     return doc_json

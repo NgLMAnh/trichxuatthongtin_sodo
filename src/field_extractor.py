@@ -1,0 +1,137 @@
+import re
+
+from src.text_utils import find_best_anchor
+
+
+class FieldExtractor:
+    def __init__(self, config):
+        self.config = config.get("field_extraction", {})
+
+    def extract(self, blocks, sections, graph):
+        results = {}
+
+        for field_name, field_cfg in self.config.items():
+            anchors = field_cfg.get("anchors", [])
+            target_sections = field_cfg.get("target_sections", [])
+
+            candidate_blocks = []
+            if target_sections:
+                for section_name in target_sections:
+                    block_ids = sections.get(section_name, [])
+                    candidate_blocks.extend(
+                        [block for block in blocks if block["block_id"] in block_ids]
+                    )
+            else:
+                candidate_blocks = blocks
+
+            if not candidate_blocks:
+                candidate_blocks = blocks
+
+            anchor_block = find_best_anchor(candidate_blocks, anchors)
+            if not anchor_block and candidate_blocks is not blocks:
+                anchor_block = find_best_anchor(blocks, anchors)
+            if not anchor_block:
+                results[field_name] = None
+                continue
+
+            results[field_name] = self._extract_from_anchor(anchor_block, field_cfg, graph)
+
+        return results
+
+    def _extract_from_anchor(self, anchor_block, field_cfg, graph):
+        text = anchor_block["text"]
+        regex_pattern = field_cfg.get("regex")
+
+        if ":" in text:
+            potential_val = text.split(":", 1)[1].strip()
+            potential_val = re.sub(r"^[ \.\-_:\(\)\/]+", "", potential_val).strip()
+            if potential_val:
+                if regex_pattern:
+                    match = re.search(regex_pattern, potential_val)
+                    if match:
+                        return match.group(0)
+                elif len(potential_val) >= 2:
+                    if field_cfg.get("multiline"):
+                        return self._extend_multiline(anchor_block, potential_val, graph)
+                    return potential_val
+
+        ordered_candidates = self._ordered_neighbor_candidates(anchor_block, field_cfg, graph)
+        if not ordered_candidates:
+            return None
+
+        first_raw_val = None
+        for candidate in ordered_candidates:
+            raw_val = candidate["text"]
+            if field_cfg.get("multiline"):
+                raw_val = self._extend_multiline(candidate, raw_val, graph)
+
+            if first_raw_val is None:
+                first_raw_val = raw_val
+
+            if regex_pattern:
+                match = re.search(regex_pattern, raw_val)
+                if match:
+                    return match.group(0)
+            else:
+                return raw_val
+
+        return None if regex_pattern else first_raw_val
+
+    def _ordered_neighbor_candidates(self, anchor_block, field_cfg, graph):
+        directions = field_cfg.get("direction", ["right", "below"])
+        same_line_pref = field_cfg.get("same_line_preferred", False)
+        candidates = []
+
+        for direction in directions:
+            neighbors = graph.get_neighbors(anchor_block["block_id"], direction, max_distance=600)
+            if not neighbors:
+                continue
+
+            if direction == "right" and same_line_pref:
+                same_row = [
+                    neighbor
+                    for neighbor in neighbors
+                    if graph._same_row(anchor_block["bbox"], neighbor["bbox"])
+                ]
+                candidates.extend(same_row)
+                candidates.extend([neighbor for neighbor in neighbors if neighbor not in same_row])
+            else:
+                candidates.extend(neighbors)
+
+        return candidates
+
+    def _extend_multiline(self, start_block, current_text, graph):
+        extended_text = current_text
+        current_block_id = start_block["block_id"]
+
+        for _ in range(2):
+            below_neighbors = graph.get_neighbors(current_block_id, "below", max_distance=100)
+            if not below_neighbors:
+                break
+
+            next_block = below_neighbors[0]
+            next_text = next_block.get("text", "").lower()
+            stop_keywords = [
+                "thửa đất",
+                "thá»­a Ä‘áº¥t",
+                "tờ bản đồ",
+                "tá» báº£n Ä‘á»“",
+                "diện tích",
+                "diá»‡n tÃ­ch",
+                "hình thức",
+                "hÃ¬nh thá»©c",
+                "kết cấu",
+                "káº¿t cáº¥u",
+                "mục ",
+                "má»¥c ",
+            ]
+            if any(keyword in next_text for keyword in stop_keywords):
+                break
+
+            if abs(start_block["bbox"][0] - next_block["bbox"][0]) < 150:
+                extended_text += " " + next_block["text"]
+                current_block_id = next_block["block_id"]
+            else:
+                break
+
+        return extended_text

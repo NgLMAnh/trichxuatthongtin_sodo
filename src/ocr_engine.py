@@ -1,5 +1,6 @@
 import os
 import sys
+import tempfile
 from PIL import Image
 
 try:
@@ -37,38 +38,57 @@ class OCREngine:
         self.det_model = PaddleOCR(use_angle_cls=True, det=True, rec=False, lang='vi', show_log=False, use_gpu=gpu)
         
         # 2. Initialize VietOCR for recognition
-        config = Cfg.load_config_from_name('vgg_transformer')
+        config = self._load_vietocr_config()
         config['cnn']['pretrained'] = False
         config['device'] = 'cuda:0' if gpu else 'cpu'
+        self._prefer_local_vietocr_weights(config)
         self.rec_model = Predictor(config)
 
-    def run_ocr(self, image_path):
+    def _load_vietocr_config(self):
+        local_config = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            "configs",
+            "vietocr",
+            "vgg_transformer.yml",
+        )
+        if os.path.exists(local_config):
+            return Cfg.load_config_from_file(local_config)
+        return Cfg.load_config_from_name('vgg_transformer')
+
+    def _prefer_local_vietocr_weights(self, config):
+        project_weight = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            "configs",
+            "vietocr",
+            "weights",
+            "vgg_transformer.pth",
+        )
+        if os.path.exists(project_weight):
+            config["weights"] = project_weight
+            return
+
+        cached_weight = os.path.join(tempfile.gettempdir(), "vgg_transformer.pth")
+        if os.path.exists(cached_weight):
+            config["weights"] = cached_weight
+
+    def run_ocr(self, image_path, layout_blocks=None):
         """
         Performs OCR on an image.
         Returns:
-            list[dict]: A list of dicts with keys: 'text', 'bbox' (x1, y1, x2, y2), 'confidence'.
+            list[dict]: A list of dicts with keys: 'text', 'bbox' (x1, y1, x2, y2), 'confidence', 'block_id'.
         """
         if not os.path.exists(image_path):
             raise FileNotFoundError(f"Image not found at: {image_path}")
 
-        # Step 1: Detect Text Bounding Boxes using PaddleOCR
-        results = self.det_model.ocr(image_path, cls=True)
-        
+        img = Image.open(image_path).convert('RGB')
         parsed_results = []
+        
+        # Luôn chạy det trên toàn bộ ảnh để không bị sót chữ do layout model nhận diện thiếu
+        results = self.det_model.ocr(image_path, cls=True)
         if not results or not results[0]:
             return parsed_results
             
-        # Open original image to crop
-        img = Image.open(image_path).convert('RGB')
-        
-        # PaddleOCR returns a list of boxes for results[0] when rec=False
-        # Each box is a list of 4 points: [[x1, y1], [x2, y2], [x3, y3], [x4, y4]]
-        boxes = results[0]
-        
         for line in results[0]:
-            # Depending on cls=True/False and rec=True/False, line could be:
-            # - A bounding box: [[x1, y1], [x2, y2], ...]
-            # - A list: [box, (label, score)]
             if isinstance(line[0][0], (int, float)):
                 box = line
             else:
@@ -76,23 +96,30 @@ class OCREngine:
                 
             xs = [p[0] for p in box]
             ys = [p[1] for p in box]
-            x1, y1, x2, y2 = min(xs), min(ys), max(xs), max(ys)
+            lx1, ly1, lx2, ly2 = min(xs), min(ys), max(xs), max(ys)
             
-            # Step 2: Crop image
-            # Add a small padding to prevent cutting off text edges
             pad = 2
-            crop_img = img.crop((max(0, x1 - pad), max(0, y1 - pad), min(img.width, x2 + pad), min(img.height, y2 + pad)))
-            
-            # Step 3: Recognize text using VietOCR
-            # VietOCR returns (text, confidence) if return_prob=True
+            crop_img = img.crop((max(0, lx1 - pad), max(0, ly1 - pad), min(img.width, lx2 + pad), min(img.height, ly2 + pad)))
             text, prob = self.rec_model.predict(crop_img, return_prob=True)
             
-            # Only keep results with some text
             if text.strip():
+                # Tìm block_id tương ứng
+                assigned_block_id = None
+                if layout_blocks:
+                    best_iou = 0
+                    lcx, lcy = (lx1 + lx2)/2, (ly1 + ly2)/2
+                    for b in layout_blocks:
+                        bx1, by1, bx2, by2 = b['bbox']
+                        # Check if center is inside block
+                        if bx1 <= lcx <= bx2 and by1 <= lcy <= by2:
+                            assigned_block_id = b['block_id']
+                            break
+                            
                 parsed_results.append({
                     "text": text,
-                    "bbox": [x1, y1, x2, y2],
-                    "confidence": float(prob)
+                    "bbox": [lx1, ly1, lx2, ly2],
+                    "confidence": float(prob),
+                    "block_id": assigned_block_id
                 })
-                
+                    
         return parsed_results

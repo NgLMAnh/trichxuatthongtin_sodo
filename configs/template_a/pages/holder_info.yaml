@@ -28,6 +28,7 @@ fields:
     regex: '\d{4}'
     same_line_preferred: true
     y_max: 950
+
   id_number:
     anchors:
       - "CMND số"
@@ -39,6 +40,7 @@ fields:
     max_distance: 250
     regex: '\d{9,12}'
     same_line_preferred: true #ưu tiên candidate nằm cùng dòng với anchor
+    
   address:
     anchors:
       - "Địa chỉ thường trú"
