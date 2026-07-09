@@ -25,6 +25,13 @@ class FieldExtractor:
                 candidate_blocks = blocks
 
             if not candidate_blocks:
+                # strict_section: field này CHỈ có ý nghĩa trong 1 mẫu cụ thể (VD: các
+                # field asset_info chỉ tồn tại ở mẫu GCN hợp nhất). Nếu section đó không
+                # tồn tại trong document (mẫu khác), coi như field không áp dụng - KHÔNG
+                # tìm kiếm toàn document (tránh khớp nhầm sang nội dung mục khác).
+                if field_cfg.get("strict_section"):
+                    results[field_name] = None
+                    continue
                 candidate_blocks = blocks
 
             anchor_block = find_best_anchor(candidate_blocks, anchors)
@@ -168,6 +175,10 @@ class FieldExtractor:
                 "káº¿t cáº¥u",
                 "mục ",
                 "má»¥c ",
+                "thông tin tài sản",
+                "sơ đồ thửa đất",
+                "kích thước",
+                "bản đồ vị trí",
             ]
             if any(keyword in next_text for keyword in stop_keywords):
                 break

@@ -29,9 +29,14 @@ def main():
         return
         
     # --- Khởi tạo LLM ---
-    print("⏳ Đang khởi tạo mô hình AI (Ollama qwen2.5:7b)...")
+    print("⏳ Đang kết nối tới mô hình AI qwen3:8b trên server hạ tầng...")
     try:
-        llm = Ollama(model="qwen2.5:7b", temperature=0.0)
+        llm = Ollama(
+            base_url="https://ocr.devforenv.com/api/chat",
+            model="qwen3:8b", 
+            temperature=0.0,
+            stream=False
+        )
     except Exception as e:
         print(f"Lỗi tải Ollama: {e}")
         return
@@ -71,9 +76,19 @@ TRẢ LỜI:"""
             if not user_input.strip():
                 continue
             
+            # ====== BƯỚC 0: Câu hỏi tổng hợp/so sánh qua NHIỀU tài liệu ======
+            # (đếm, liệt kê, lớn/nhỏ nhất, đồng sở hữu...) - tính trực tiếp trên
+            # JSON, không qua LLM, để không thể ảo giác. Phải chạy TRƯỚC classify()
+            # vì các câu này dễ bị field-pattern đơn lẻ (VD "thửa đất nào") bắt nhầm.
+            agg_answer, agg_doc_id = router.lookup_aggregate(user_input)
+            if agg_answer:
+                print(f"\n🔀 [Router] Câu hỏi tổng hợp nhiều tài liệu → Tính trực tiếp trên JSON")
+                print(f"\n🤖 Chatbot (Aggregate):\n{agg_answer}")
+                continue
+
             # ====== BƯỚC 1: Query Router — phân loại câu hỏi ======
             route_type, field_name = router.classify(user_input)
-            
+
             if route_type == "field":
                 print(f"\n🔀 [Router] Câu hỏi field-based → Tra cứu trực tiếp JSON (field: {field_name})")
                 answer, doc_id = router.lookup_json(user_input, field_name)
@@ -82,12 +97,25 @@ TRẢ LỜI:"""
                 else:
                     print(f"\n⚠️ Không tìm thấy thông tin '{field_name}' trong JSON. Chuyển sang RAG...")
                     route_type = "rag"  # Fallback sang RAG
-            
+
             if route_type == "rag":
+                # ====== BƯỚC 1b: Field bổ sung (tự sinh từ mọi dòng "nhãn: giá trị"
+                # trên giấy) - bắt các câu hỏi không khớp field khai báo tay nào
+                # nhưng vẫn là tra cứu 1 thông tin cụ thể, trước khi tốn LLM cho RAG.
+                extra_answer, extra_doc_id = router.lookup_extra_field(user_input)
+                if extra_answer:
+                    print(f"\n🔀 [Router] Khớp field bổ sung → Tra cứu trực tiếp JSON")
+                    print(f"\n🤖 Chatbot (Extra Field Lookup):\n{extra_answer}")
+                    continue
+
                 print(f"\n🔀 [Router] Câu hỏi mở → Đi qua RAG Pipeline")
-                
+
                 # ====== BƯỚC 2: Synonym Expansion ======
                 expanded_query = expand_query(user_input)
+                if router.last_doc_id:
+                    # Ghi nhớ hội thoại: gợi ý tài liệu đang nói tới để vector
+                    # search ưu tiên đúng ngữ cảnh khi câu hỏi không nêu rõ.
+                    expanded_query = f"[Đang hỏi về tài liệu {router.last_doc_id}] {expanded_query}"
                 if expanded_query != user_input:
                     print(f"🔍 [Synonym] Query mở rộng: {expanded_query}")
                 

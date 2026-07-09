@@ -98,6 +98,37 @@ field_extraction:
     direction: ["right", "below"]
     regex: "\\d+(?:[.,]\\d+)?"
 
+  # Các field dưới đây thuộc Mục "3. Thông tin tài sản gắn liền với đất" (asset_info)
+  # của mẫu GCN hợp nhất - KHÁC diện tích thửa đất (area_m2, thuộc land_info).
+  asset_name:
+    anchors:
+      - "Tên tài sản"
+    target_sections: ["asset_info"]
+    strict_section: true
+    direction: ["right"]
+
+  usable_area_m2:
+    anchors:
+      - "Diện tích sử dụng"
+    target_sections: ["asset_info"]
+    strict_section: true
+    direction: ["right"]
+    regex: "\\d+(?:[.,]\\d+)?"
+
+  ownership_form:
+    anchors:
+      - "Hình thức sở hữu"
+    target_sections: ["asset_info"]
+    strict_section: true
+    direction: ["right"]
+
+  ownership_term:
+    anchors:
+      - "Thời hạn sở hữu"
+    target_sections: ["asset_info"]
+    strict_section: true
+    direction: ["right"]
+
 # Trích xuất "biến động đất đai" (Mục III/IV/VI) — nhiều record mỗi document.
 # Đọc bởi src/change_extractor.py (ChangeHistoryExtractor), tách biệt với
 # field_extraction ở trên (vẫn chỉ trả 1 giá trị/field).

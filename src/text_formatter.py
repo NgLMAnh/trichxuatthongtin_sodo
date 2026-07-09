@@ -5,6 +5,7 @@ PIPELINE_STAGES = ["PP-StructureV3", "PaddleOCR", "VietOCR"]
 SECTION_TITLES = {
     "holder_info": "Muc I - Chu so huu / nguoi su dung dat",
     "land_info": "Muc II - Thong tin nha dat / thua dat",
+    "asset_info": "Thong tin tai san gan lien voi dat",
     "land_diagram": "Muc IIc - So do",
     "owner_changes": "Muc III - Thay doi ve chu",
     "property_changes": "Muc IV - Thay doi nha dat / the chap",
@@ -72,8 +73,9 @@ def _page_payload_to_parts(page_payload):
             page_payload.get("blocks", []),
             page_payload.get("sections", {}),
             page_payload.get("fields", {}),
+            page_payload.get("extra_fields", []),
         )
-    return page_payload or [], {}, {}
+    return page_payload or [], {}, {}, []
 
 
 def _group_blocks_by_section(blocks, sections):
@@ -81,6 +83,7 @@ def _group_blocks_by_section(blocks, sections):
     for section_name in [
         "holder_info",
         "land_info",
+        "asset_info",
         "land_diagram",
         "owner_changes",
         "property_changes",
@@ -153,6 +156,46 @@ def _format_change_history(change_history):
     return lines
 
 
+def _format_holders(holders):
+    """Chỉ xuất thêm khi document có >1 chủ sở hữu (mẫu GCN hợp nhất vợ/chồng);
+    trường hợp 1 chủ đã có sẵn chu_so_huu/cmnd_cccd trong document_summary."""
+    if not holders or len(holders) < 2:
+        return []
+
+    lines = []
+    for idx, holder in enumerate(holders, start=1):
+        role = _escape_value(holder.get("role"))
+        name = _escape_value(holder.get("name"))
+        id_number = _escape_value(holder.get("id_number"))
+        if name:
+            lines.append(f"- chu_so_huu_{idx}: {name}")
+        if id_number:
+            lines.append(f"- cmnd_cccd_{idx}: {id_number}")
+        if role:
+            lines.append(f"- vai_tro_{idx}: {role}")
+
+    return lines
+
+
+def _format_extra_fields(extra_fields):
+    """Lớp bổ sung: mọi cặp '<nhãn>: <giá trị>' chưa có field khai báo tay nào bắt được."""
+    if not extra_fields:
+        return []
+
+    lines = ["### extra_fields", ""]
+    for item in extra_fields:
+        key = _escape_value(item.get("key"))
+        value = _escape_value(item.get("value"))
+        label = _escape_value(item.get("label"))
+        if key and value:
+            lines.append(f"- {key}: {value}  # {label}")
+
+    if len(lines) == 2:
+        return []
+    lines.append("")
+    return lines
+
+
 def _format_block(block, page_name, section_name):
     text = _escape_value(block.get("text", ""))
     if not text:
@@ -210,6 +253,7 @@ def format_as_markdown(page_blocks_dict, document_id=None, doc_json=None):
         md_lines.extend(["# document_summary", ""])
         holder = doc_json.get("holder", {})
         land = doc_json.get("land_parcel", {})
+        asset = doc_json.get("asset", {})
         summary_fields = {
             "chu_so_huu": holder.get("name"),
             "cmnd_cccd": holder.get("id_number"),
@@ -218,17 +262,22 @@ def format_as_markdown(page_blocks_dict, document_id=None, doc_json=None):
             "thua_dat_so": land.get("parcel_number"),
             "to_ban_do_so": land.get("map_sheet_number"),
             "dien_tich_m2": land.get("area_m2"),
+            "ten_tai_san": asset.get("asset_name"),
+            "dien_tich_su_dung_m2": asset.get("usable_area_m2"),
+            "hinh_thuc_so_huu": asset.get("ownership_form"),
+            "thoi_han_so_huu": asset.get("ownership_term"),
         }
         for key, value in summary_fields.items():
             value = _escape_value(value)
             if value:
                 md_lines.append(f"- {key}: {value}")
 
+        md_lines.extend(_format_holders(doc_json.get("holders")))
         md_lines.extend(_format_change_history(doc_json.get("change_history")))
         md_lines.append("")
 
     for page_index, (page_name, page_payload) in enumerate(page_blocks_dict.items(), start=1):
-        blocks, sections, fields = _page_payload_to_parts(page_payload)
+        blocks, sections, fields, extra_fields = _page_payload_to_parts(page_payload)
         sorted_blocks = sorted(blocks, key=lambda b: b.get("reading_order", 0))
         section_groups = _group_blocks_by_section(sorted_blocks, sections)
 
@@ -248,6 +297,7 @@ def format_as_markdown(page_blocks_dict, document_id=None, doc_json=None):
         )
 
         md_lines.extend(_format_field_summary(fields))
+        md_lines.extend(_format_extra_fields(extra_fields))
 
         for section_name, section_blocks in section_groups.items():
             section_title = SECTION_TITLES.get(section_name, section_name)

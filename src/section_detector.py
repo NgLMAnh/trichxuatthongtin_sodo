@@ -8,6 +8,7 @@ class SectionDetector:
         "unknown",
         "holder_info",
         "land_info",
+        "asset_info",
         "land_diagram",
         "owner_changes",
         "property_changes",
@@ -21,6 +22,12 @@ class SectionDetector:
         (r"\bmuc\s+iii\b", "owner_changes"),
         (r"\bmuc\s+iv\b", "property_changes"),
         (r"\bvi\b.*\bthay\s+doi\b", "post_issue_changes"),
+        # Mẫu GCN hợp nhất (đánh số 1-6) dùng từ ~2009, không có "Mục I/II/III/IV"
+        (r"^1\s+nguoi\s+su\s+dung\s+dat", "holder_info"),
+        (r"^2\s+thong\s+tin\s+thua\s+dat", "land_info"),
+        (r"^3\s+thong\s+tin\s+tai\s+san", "asset_info"),
+        (r"^4\s+so\s+do\s+thua\s+dat", "land_diagram"),
+        (r"^6\s+nhung\s+thay\s+doi\s+sau\s+khi\s+cap", "post_issue_changes"),
     ]
 
     def __init__(self, config):

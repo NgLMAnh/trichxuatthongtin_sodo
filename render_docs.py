@@ -10,27 +10,27 @@ except ImportError:
 def main():
     # Base directories
     base_dir = os.path.dirname(os.path.abspath(__file__))
-    doc1_dir = os.path.join(base_dir, "data", "documents")
-    output_base_dir = os.path.join(base_dir, "data", "documents", "DOC_004")
+    input_dir = os.path.join(base_dir, "data", "documents")
+    output_base_dir = os.path.join(base_dir, "data", "documents")
 
-    if not os.path.exists(doc1_dir):
-        print(f"Error: Directory '{doc1_dir}' does not exist.")
+    if not os.path.exists(input_dir):
+        print(f"Error: Directory '{input_dir}' does not exist.")
         return
 
-    # List and sort PDF files in DOC1
-    files = sorted([f for f in os.listdir(doc1_dir) if f.lower().endswith(".pdf")])
+    # List and sort PDF files in documents folder
+    files = sorted([f for f in os.listdir(input_dir) if f.lower().endswith(".pdf")])
     
     if not files:
-        print(f"No PDF files found in '{doc1_dir}'.")
+        print(f"No PDF files found in '{input_dir}'.")
         return
 
-    print(f"Found {len(files)} PDF files in DOC1. Rendering to images...")
+    print(f"Found {len(files)} PDF files. Rendering to images...")
 
     for i, filename in enumerate(files, 1):
-        pdf_path = os.path.join(doc1_dir, filename)
+        pdf_path = os.path.join(input_dir, filename)
         
-        # Create folder name like DOC_001, DOC_002, etc.
-        folder_name = f"DOC_{i:03d}"
+        # Create folder using the PDF filename (e.g. 'DOC_004.pdf' -> 'DOC_004')
+        folder_name = os.path.splitext(filename)[0]
         target_dir = os.path.join(output_base_dir, folder_name)
         os.makedirs(target_dir, exist_ok=True)
         

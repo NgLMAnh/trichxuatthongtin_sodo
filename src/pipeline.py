@@ -6,7 +6,9 @@ from src.section_detector import SectionDetector
 from src.spatial_graph import SpatialGraph
 from src.field_extractor import FieldExtractor
 from src.change_extractor import ChangeHistoryExtractor
-from src.normalizers import normalize_fields, normalize_change_history
+from src.holder_extractor import HolderExtractor
+from src.generic_field_extractor import extract_generic_fields
+from src.normalizers import normalize_fields, normalize_change_history, normalize_holders
 from src.document_merger import merge_pages
 
 class DocumentPipeline:
@@ -18,6 +20,7 @@ class DocumentPipeline:
         self.section_detector = SectionDetector(config)
         self.field_extractor = FieldExtractor(config)
         self.change_extractor = ChangeHistoryExtractor(config)
+        self.holder_extractor = HolderExtractor(config)
 
     def process_image(self, image_path):
         """
@@ -45,11 +48,23 @@ class DocumentPipeline:
         raw_change_history = self.change_extractor.extract(blocks, sections)
         change_history = normalize_change_history(raw_change_history)
 
+        # Chỉ khớp khi mẫu GCN gộp tên+CMND/CCCD trong 1 block (xem holder_extractor.py).
+        # Mẫu cũ (tên/CMND ở 2 block riêng) sẽ trả về [] - document_merger.py sẽ
+        # fallback dùng lại holder scalar đã merge (từ FieldExtractor) cho trường hợp đó.
+        raw_holders = self.holder_extractor.extract(blocks, sections)
+        holders = normalize_holders(raw_holders)
+
+        # Lớp bổ sung: bắt mọi dòng "<nhãn>: <giá trị>" chưa được field nào ở trên
+        # khai báo tay xử lý, để không mất thông tin khi gặp mẫu/mục con mới.
+        extra_fields = extract_generic_fields(blocks, sections)
+
         return {
             "blocks": blocks,
             "sections": sections,
             "fields": norm_fields,
             "change_history": change_history,
+            "holders": holders,
+            "extra_fields": extra_fields,
         }
 
     def _attach_sections_to_blocks(self, blocks, sections):
@@ -84,11 +99,14 @@ class DocumentPipeline:
                     "page_type": "holder_info" if res["fields"].get("holder_name") else "land_info",
                     "fields": res["fields"],
                     "change_history": change_history,
+                    "holders": res["holders"],
+                    "extra_fields": res["extra_fields"],
                 })
                 page_blocks_dict[img_name] = {
                     "blocks": res["blocks"],
                     "sections": res["sections"],
                     "fields": res["fields"],
+                    "extra_fields": res["extra_fields"],
                     "source_image": img_path,
                 }
             except Exception as e:

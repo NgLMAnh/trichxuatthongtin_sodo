@@ -117,6 +117,38 @@ def normalize_fields(extracted_data):
         val = extracted_data["birthday"]
         normalized["birthday"] = normalize_text(val) if val else None
 
+    # 8. asset_name (Mục "3. Thông tin tài sản...")
+    if "asset_name" in extracted_data:
+        normalized["asset_name"] = clean_name_or_address(extracted_data["asset_name"]) or None
+
+    # 9. usable_area_m2 (diện tích SỬ DỤNG của tài sản, khác area_m2 của thửa đất)
+    if "usable_area_m2" in extracted_data:
+        normalized["usable_area_m2"] = normalize_area(extracted_data["usable_area_m2"])
+
+    # 10. ownership_form / ownership_term
+    if "ownership_form" in extracted_data:
+        normalized["ownership_form"] = clean_name_or_address(extracted_data["ownership_form"]) or None
+    if "ownership_term" in extracted_data:
+        normalized["ownership_term"] = clean_name_or_address(extracted_data["ownership_term"]) or None
+
+    return normalized
+
+def normalize_holders(holders):
+    """
+    Chuẩn hoá danh sách chủ sở hữu/người sử dụng đất (hỗ trợ nhiều người/document).
+    """
+    normalized = []
+    for holder in holders or []:
+        id_number = holder.get("id_number")
+        if id_number:
+            id_number = re.sub(r'[^a-zA-Z0-9]', '', id_number) or None
+        normalized.append({
+            "role": holder.get("role"),
+            "name": clean_name(holder.get("name")) or None,
+            "id_number": id_number,
+            "birthday": normalize_text(holder.get("birthday")) if holder.get("birthday") else None,
+            "address": clean_name_or_address(holder.get("address")) or None,
+        })
     return normalized
 
 def normalize_change_history(records):

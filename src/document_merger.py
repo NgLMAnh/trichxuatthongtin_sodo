@@ -51,8 +51,17 @@ def merge_pages(document_id, page_results):
             "map_sheet_number": None,
             "area_m2": None
         },
-        "change_history": []
+        "change_history": [],
+        "holders": [],
+        "asset": {
+            "asset_name": None,
+            "usable_area_m2": None,
+            "ownership_form": None,
+            "ownership_term": None
+        },
+        "extra_fields": []
     }
+    seen_extra = set()
     
     for page in page_results:
         ptype = page.get("page_type")
@@ -95,7 +104,41 @@ def merge_pages(document_id, page_results):
             if is_better_value(new_val, old_val, "area_m2"):
                 doc_json["land_parcel"]["area_m2"] = new_val
 
+        for asset_field in ("asset_name", "usable_area_m2", "ownership_form", "ownership_term"):
+            if asset_field in fields:
+                new_val = fields[asset_field]
+                old_val = doc_json["asset"][asset_field]
+                if is_better_value(new_val, old_val, asset_field):
+                    doc_json["asset"][asset_field] = new_val
+
         # change_history: nối theo thứ tự trang (nhiều record/document, không overwrite)
         doc_json["change_history"].extend(page.get("change_history", []))
+
+        # holders: lấy trang có nhiều chủ sở hữu nhất (mẫu GCN hợp nhất gộp tên+CCCD
+        # thường nằm trọn trong 1 trang; mẫu cũ trả về [] và sẽ fallback dưới đây).
+        page_holders = page.get("holders", [])
+        if len(page_holders) > len(doc_json["holders"]):
+            doc_json["holders"] = page_holders
+
+        # extra_fields: nối qua các trang, dedupe theo (key, value) toàn document
+        # (mỗi trang đã tự dedupe nội bộ, nhưng label giống nhau có thể lặp giữa trang).
+        for item in page.get("extra_fields", []):
+            dedupe_key = (item.get("key"), item.get("value"))
+            if dedupe_key in seen_extra:
+                continue
+            seen_extra.add(dedupe_key)
+            doc_json["extra_fields"].append(item)
+
+    if doc_json["holders"]:
+        # HolderExtractor khớp được (mẫu GCN hợp nhất) -> đồng bộ lại holder scalar
+        # (tương thích ngược cho các nơi vẫn chỉ đọc doc_json["holder"]) từ người đầu tiên.
+        primary = doc_json["holders"][0]
+        doc_json["holder"]["name"] = primary.get("name") or doc_json["holder"]["name"]
+        doc_json["holder"]["id_number"] = primary.get("id_number") or doc_json["holder"]["id_number"]
+    elif doc_json["holder"].get("name"):
+        # Mẫu cũ: tên/CMND ở 2 block riêng, HolderExtractor không khớp được gì.
+        # Dùng lại holder scalar đã merge làm 1 chủ sở hữu duy nhất, để "holders"
+        # luôn có sẵn cho mọi mẫu (không chỉ mẫu GCN hợp nhất).
+        doc_json["holders"] = [dict(doc_json["holder"], role=None)]
 
     return doc_json

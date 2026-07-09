@@ -95,3 +95,10 @@ quality_report.csv
 pipeline.png
 land_certificate_chatbot_conversation_summary.md
 implementation_plan.md
+test_api.py
+cli_chat.py
+convert_to_pdf.py
+TEST_QUESTIONS.md
+TEST_REPORT.md
+TEST_REPORT.pdf
+test_questions_only.txt
