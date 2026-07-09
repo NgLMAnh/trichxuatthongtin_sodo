@@ -50,7 +50,8 @@ def merge_pages(document_id, page_results):
             "parcel_number": None,
             "map_sheet_number": None,
             "area_m2": None
-        }
+        },
+        "change_history": []
     }
     
     for page in page_results:
@@ -93,5 +94,8 @@ def merge_pages(document_id, page_results):
             old_val = doc_json["land_parcel"]["area_m2"]
             if is_better_value(new_val, old_val, "area_m2"):
                 doc_json["land_parcel"]["area_m2"] = new_val
-                    
+
+        # change_history: nối theo thứ tự trang (nhiều record/document, không overwrite)
+        doc_json["change_history"].extend(page.get("change_history", []))
+
     return doc_json

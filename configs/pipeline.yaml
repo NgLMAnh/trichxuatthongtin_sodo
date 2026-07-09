@@ -97,3 +97,20 @@ field_extraction:
     target_sections: ["land_info"]
     direction: ["right", "below"]
     regex: "\\d+(?:[.,]\\d+)?"
+
+# Trích xuất "biến động đất đai" (Mục III/IV/VI) — nhiều record mỗi document.
+# Đọc bởi src/change_extractor.py (ChangeHistoryExtractor), tách biệt với
+# field_extraction ở trên (vẫn chỉ trả 1 giá trị/field).
+change_extraction:
+  target_sections: ["owner_changes", "property_changes", "post_issue_changes"]
+  date_anchors:
+    - "Ngày"
+  application_number_anchors:
+    - "Hồ sơ gốc số"
+    - "Số hồ sơ"
+    - "Hồ sơ số"
+    - "Hồ sơ"
+  decision_place_anchors:
+    - "UBND"
+    - "Ủy ban nhân dân"
+    - "Chủ tịch UBND"

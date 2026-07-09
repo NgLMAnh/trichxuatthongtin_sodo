@@ -5,7 +5,8 @@ from src.block_builder import BlockBuilder
 from src.section_detector import SectionDetector
 from src.spatial_graph import SpatialGraph
 from src.field_extractor import FieldExtractor
-from src.normalizers import normalize_fields
+from src.change_extractor import ChangeHistoryExtractor
+from src.normalizers import normalize_fields, normalize_change_history
 from src.document_merger import merge_pages
 
 class DocumentPipeline:
@@ -16,6 +17,7 @@ class DocumentPipeline:
         self.block_builder = BlockBuilder()
         self.section_detector = SectionDetector(config)
         self.field_extractor = FieldExtractor(config)
+        self.change_extractor = ChangeHistoryExtractor(config)
 
     def process_image(self, image_path):
         """
@@ -39,11 +41,15 @@ class DocumentPipeline:
         
         raw_fields = self.field_extractor.extract(blocks, sections, graph)
         norm_fields = normalize_fields(raw_fields)
-        
+
+        raw_change_history = self.change_extractor.extract(blocks, sections)
+        change_history = normalize_change_history(raw_change_history)
+
         return {
             "blocks": blocks,
             "sections": sections,
-            "fields": norm_fields
+            "fields": norm_fields,
+            "change_history": change_history,
         }
 
     def _attach_sections_to_blocks(self, blocks, sections):
@@ -66,13 +72,18 @@ class DocumentPipeline:
             print(f"  - Đang xử lý: {img_name}")
             try:
                 res = self.process_image(img_path)
-                
+
+                change_history = res["change_history"]
+                for record in change_history:
+                    record["page"] = img_name
+
                 page_results.append({
                     "page_name": img_name,
-                    # Phân loại page_type cho document_merger. 
+                    # Phân loại page_type cho document_merger.
                     # Nếu có field nào được extract, ta coi nó là loại trang tương ứng.
                     "page_type": "holder_info" if res["fields"].get("holder_name") else "land_info",
-                    "fields": res["fields"]
+                    "fields": res["fields"],
+                    "change_history": change_history,
                 })
                 page_blocks_dict[img_name] = {
                     "blocks": res["blocks"],

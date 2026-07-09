@@ -19,7 +19,7 @@ for doc_id in ["DOC_001", "DOC_002", "DOC_003"]:
     print(f" CHUNKING: {doc_id}")
     print(f"{'#'*60}")
     
-    chunks = chunk_document(md_path, chunk_size=3000, chunk_overlap=300)
+    chunks = chunk_document(md_path)
     print_chunks(chunks)
     
     # Lưu output chunking

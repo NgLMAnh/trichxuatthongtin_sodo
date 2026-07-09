@@ -34,31 +34,52 @@ class FieldExtractor:
                 results[field_name] = None
                 continue
 
-            results[field_name] = self._extract_from_anchor(anchor_block, field_cfg, graph)
+            results[field_name] = self._extract_from_anchor(anchor_block, {**field_cfg, "_field_name": field_name}, graph)
 
         return results
+
+    @staticmethod
+    def _validate_id_number(value):
+        """Validate CMND (9 số) hoặc CCCD (12 số). Loại bỏ false positive."""
+        if not value:
+            return None
+        digits = re.sub(r"\D", "", value)
+        if len(digits) in (9, 12):
+            return digits
+        return None
 
     def _extract_from_anchor(self, anchor_block, field_cfg, graph):
         text = anchor_block["text"]
         regex_pattern = field_cfg.get("regex")
+        field_name = field_cfg.get("_field_name", "")
 
-        if ":" in text:
-            potential_val = text.split(":", 1)[1].strip()
-            potential_val = re.sub(r"^[ \.\-_:\(\)\/]+", "", potential_val).strip()
-            if potential_val:
-                if regex_pattern:
-                    match = re.search(regex_pattern, potential_val)
-                    if match:
-                        return match.group(0)
-                elif len(potential_val) >= 2:
-                    if field_cfg.get("multiline"):
-                        return self._extend_multiline(anchor_block, potential_val, graph, field_cfg)
-                    return potential_val
+        # Bước 1: Thử tách giá trị sau dấu phân cách (: hoặc bất kỳ)
+        for sep in [":", "-", "="]:
+            if sep in text:
+                potential_val = text.split(sep, 1)[1].strip()
+                potential_val = re.sub(r"^[ \.\-_:\(\)\/]+", "", potential_val).strip()
+                if potential_val:
+                    if regex_pattern:
+                        match = re.search(regex_pattern, potential_val)
+                        if match:
+                            extracted = match.group(0)
+                            if field_name == "id_number":
+                                return self._validate_id_number(extracted) or extracted
+                            return extracted
+                    elif len(potential_val) >= 2:
+                        if field_cfg.get("multiline"):
+                            return self._extend_multiline(anchor_block, potential_val, graph, field_cfg)
+                        return potential_val
+                break  # Chỉ thử separator đầu tiên tìm thấy
 
+        # Bước 2: Fallback — quét toàn bộ text bằng regex (bất kể separator)
         if regex_pattern:
             matches = list(re.finditer(regex_pattern, text))
             if matches:
-                return matches[-1].group(0)
+                extracted = matches[-1].group(0)
+                if field_name == "id_number":
+                    return self._validate_id_number(extracted) or extracted
+                return extracted
 
         ordered_candidates = self._ordered_neighbor_candidates(anchor_block, field_cfg, graph)
         if not ordered_candidates:

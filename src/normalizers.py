@@ -116,5 +116,20 @@ def normalize_fields(extracted_data):
     if "birthday" in extracted_data:
         val = extracted_data["birthday"]
         normalized["birthday"] = normalize_text(val) if val else None
-        
+
+    return normalized
+
+def normalize_change_history(records):
+    """
+    Chuẩn hoá danh sách record biến động (application_number, decision_place).
+    decision_date đã được ChangeHistoryExtractor format sẵn dạng dd/mm/yyyy.
+    """
+    normalized = []
+    for record in records or []:
+        normalized.append({
+            **record,
+            "application_number": clean_name_or_address(record.get("application_number")) or None,
+            "decision_place": clean_name_or_address(record.get("decision_place")) or None,
+            "content": normalize_text(record.get("content")),
+        })
     return normalized

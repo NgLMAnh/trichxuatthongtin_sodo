@@ -129,6 +129,30 @@ def _format_field_summary(fields):
     return lines
 
 
+def _format_change_history(change_history):
+    if not change_history:
+        return []
+
+    lines = []
+    for idx, record in enumerate(change_history, start=1):
+        prefix = f"bien_dong_{idx}"
+        date_val = _escape_value(record.get("decision_date"))
+        app_val = _escape_value(record.get("application_number"))
+        place_val = _escape_value(record.get("decision_place"))
+        content_val = _escape_value(record.get("content"))
+
+        if date_val:
+            lines.append(f"- {prefix}_ngay: {date_val}")
+        if app_val:
+            lines.append(f"- {prefix}_so_ho_so: {app_val}")
+        if place_val:
+            lines.append(f"- {prefix}_noi_ky: {place_val}")
+        if content_val:
+            lines.append(f"- {prefix}_noi_dung: {content_val}")
+
+    return lines
+
+
 def _format_block(block, page_name, section_name):
     text = _escape_value(block.get("text", ""))
     if not text:
@@ -199,6 +223,8 @@ def format_as_markdown(page_blocks_dict, document_id=None, doc_json=None):
             value = _escape_value(value)
             if value:
                 md_lines.append(f"- {key}: {value}")
+
+        md_lines.extend(_format_change_history(doc_json.get("change_history")))
         md_lines.append("")
 
     for page_index, (page_name, page_payload) in enumerate(page_blocks_dict.items(), start=1):

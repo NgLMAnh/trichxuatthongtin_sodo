@@ -2,11 +2,12 @@
 Chunking module sử dụng LangChain để tách nội dung Markdown có cấu trúc
 thành các chunks tối ưu cho RAG pipeline.
 
-Chiến lược chunking:
-1. MarkdownHeaderTextSplitter: Tách theo tiêu đề (## page_xxx.png) để mỗi trang
-   là một chunk riêng, giữ nguyên metadata về trang nguồn.
-2. RecursiveCharacterTextSplitter: Nếu một trang quá dài, tiếp tục tách nhỏ hơn
-   nhưng vẫn giữ overlap để không mất ngữ cảnh.
+Chiến lược chunking v2 (Structure-aware + Parent-Child):
+1. MarkdownHeaderTextSplitter: Tách theo tiêu đề (## page, ### section)
+   để mỗi mục (Mục I, II, III, IV) là một chunk riêng.
+2. Parent-Child: Nếu section quá dài (> max_child_size), tạo child chunks
+   nhỏ để embed chính xác, nhưng giữ parent chunk nguyên vẹn.
+3. Child chunks dùng cho Vector Search, parent chunks dùng đưa context cho LLM.
 """
 
 import os
@@ -15,28 +16,26 @@ from langchain_text_splitters import (
     RecursiveCharacterTextSplitter,
 )
 
+# Giới hạn context window của BGE-M3 (8192 tokens ≈ ~6000 ký tự tiếng Việt)
+MAX_EMBED_CHARS = 6000
+# Kích thước child chunk để embed chính xác
+CHILD_CHUNK_SIZE = 1500
+CHILD_CHUNK_OVERLAP = 200
 
-def chunk_markdown(markdown_text, chunk_size=1000, chunk_overlap=200, document_id="unknown", doc_summary=""):
+
+def chunk_markdown(markdown_text, document_id="unknown", doc_summary=""):
     """
     Tách nội dung Markdown có cấu trúc thành các chunks tối ưu cho RAG.
     
-    Bước 1: Tách theo tiêu đề Markdown (## = trang) để giữ ngữ cảnh trang.
-    Bước 2: Nếu một chunk quá dài (> chunk_size), tiếp tục tách nhỏ hơn
-            bằng RecursiveCharacterTextSplitter với overlap.
+    Chiến lược Structure-aware:
+    - Bước 1: Tách theo ranh giới section (### = mục).
+    - Bước 2: Nếu section nhỏ hơn MAX_EMBED_CHARS → giữ nguyên (1 chunk = 1 section).
+    - Bước 3: Nếu section quá dài → tạo parent-child chunks.
     
-    Args:
-        markdown_text: Nội dung Markdown đầy đủ của một document.
-        chunk_size: Kích thước tối đa mỗi chunk (ký tự).
-        chunk_overlap: Số ký tự overlap giữa các chunk liên tiếp.
-        
     Returns:
-        list[dict]: Mỗi dict chứa 'content' (nội dung chunk) và 'metadata' 
-                    (thông tin về trang nguồn).
+        list[dict]: Mỗi dict chứa 'content', 'metadata', và tùy chọn 'parent_content'.
     """
     
-    
-    # "##" tương ứng với mỗi trang (## page_001.png, ## page_002.png, ...)
-    # "###" tương ứng với mỗi mục (### Mục I - ..., ### Mục II - ...)
     headers_to_split_on = [
         ("##", "page"),
         ("###", "section"),
@@ -44,26 +43,22 @@ def chunk_markdown(markdown_text, chunk_size=1000, chunk_overlap=200, document_i
     
     md_splitter = MarkdownHeaderTextSplitter(
         headers_to_split_on=headers_to_split_on,
-        strip_headers=False,  # Giữ lại tiêu đề trong nội dung
+        strip_headers=False,
     )
     
     md_chunks = md_splitter.split_text(markdown_text)
     
-    # Bước 2: Tách nhỏ hơn nếu chunk quá dài
-    text_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=chunk_size,
-        chunk_overlap=chunk_overlap,
+    # RecursiveCharacterTextSplitter cho child chunks
+    child_splitter = RecursiveCharacterTextSplitter(
+        chunk_size=CHILD_CHUNK_SIZE,
+        chunk_overlap=CHILD_CHUNK_OVERLAP,
         separators=[
-            "\n---\n",    # Phân cách trang (horizontal rule)
-            "\nMục I",    # Các mục chính
-            "\nMục II",
-            "\nMục III",
-            "\nMục IV",
-            "\nVI-",
-            "\n\n",       # Đoạn văn
-            "\n",         # Dòng
-            " | ",        # Cột trong cùng một dòng
-            " ",          # Từ
+            "\n---\n",
+            "\n#### ",      # Ranh giới block
+            "\n\n",
+            "\n",
+            " | ",
+            " ",
         ],
         length_function=len,
     )
@@ -73,61 +68,55 @@ def chunk_markdown(markdown_text, chunk_size=1000, chunk_overlap=200, document_i
     for doc in md_chunks:
         content = doc.page_content
         metadata = dict(doc.metadata)
-        
-        # Thêm thông tin cơ bản
         metadata["document_id"] = document_id
         
-        # Nếu chunk nhỏ hơn chunk_size, giữ nguyên
-        if len(content) <= chunk_size:
-            # Tiêm metadata vào text để hỗ trợ Embedding
-            page_name = metadata.get("page", "unknown")
-            section_name = metadata.get("section", "")
-            prefix = f"[Tài liệu: {document_id}{doc_summary} - Trang: {page_name}]"
-            if section_name:
-                prefix = f"[Tài liệu: {document_id}{doc_summary} - Trang: {page_name} - {section_name}]"
-            injected_content = f"{prefix}\n{content}"
-            
+        page_name = metadata.get("page", "unknown")
+        section_name = metadata.get("section", "")
+        
+        prefix = f"[Tài liệu: {document_id}{doc_summary} - Trang: {page_name}]"
+        if section_name:
+            prefix = f"[Tài liệu: {document_id}{doc_summary} - Trang: {page_name} - {section_name}]"
+        
+        injected_content = f"{prefix}\n{content}"
+        
+        if len(injected_content) <= MAX_EMBED_CHARS:
+            # Section nhỏ → giữ nguyên, 1 chunk = 1 section
             final_chunks.append({
                 "content": injected_content,
                 "metadata": metadata,
             })
         else:
-            # Tách nhỏ hơn bằng RecursiveCharacterTextSplitter
-            sub_docs = text_splitter.create_documents(
+            # Section quá dài → Parent-Child chunking
+            # Parent: toàn bộ section (lưu riêng, không embed)
+            parent_content = injected_content
+            
+            # Child: cắt nhỏ để embed chính xác
+            sub_docs = child_splitter.create_documents(
                 texts=[content],
                 metadatas=[metadata],
             )
+            
             for i, sub_doc in enumerate(sub_docs):
                 chunk_meta = dict(sub_doc.metadata)
                 chunk_meta["sub_chunk"] = i + 1
+                chunk_meta["has_parent"] = True
                 
-                page_name = chunk_meta.get("page", "unknown")
-                section_name = chunk_meta.get("section", "")
-                
-                prefix = f"[Tài liệu: {document_id}{doc_summary} - Trang: {page_name}]"
-                if section_name:
-                    prefix = f"[Tài liệu: {document_id}{doc_summary} - Trang: {page_name} - {section_name}]"
-                    
-                injected_content = f"{prefix} (Phần {i+1})\n{sub_doc.page_content}"
+                child_prefix = f"{prefix} (Phần {i+1})"
+                child_content = f"{child_prefix}\n{sub_doc.page_content}"
                 
                 final_chunks.append({
-                    "content": injected_content,
+                    "content": child_content,
                     "metadata": chunk_meta,
+                    "parent_content": parent_content,  # Lưu parent để đưa cho LLM
                 })
     
     return final_chunks
 
-def chunk_document(md_file_path, chunk_size=1000, chunk_overlap=200):
+
+def chunk_document(md_file_path):
     """
     Đọc file Markdown và trả về danh sách chunks.
-    
-    Args:
-        md_file_path: Đường dẫn tới file .md
-        chunk_size: Kích thước tối đa mỗi chunk
-        chunk_overlap: Số ký tự overlap
-        
-    Returns:
-        list[dict]: Danh sách chunks với content và metadata.
+    Sử dụng structure-aware chunking (không cần chunk_size cứng).
     """
     with open(md_file_path, "r", encoding="utf-8") as f:
         markdown_text = f.read()
@@ -156,7 +145,7 @@ def chunk_document(md_file_path, chunk_size=1000, chunk_overlap=200):
         except Exception:
             pass
 
-    return chunk_markdown(markdown_text, chunk_size, chunk_overlap, document_id, doc_summary)
+    return chunk_markdown(markdown_text, document_id, doc_summary)
 
 
 def _compact_summary_value(value, max_len=80):
@@ -178,5 +167,9 @@ def print_chunks(chunks):
         print(f"\n--- Chunk {i+1} ---")
         print(f"  Metadata: {chunk['metadata']}")
         print(f"  Length: {len(chunk['content'])} chars")
+        has_parent = "parent_content" in chunk
+        print(f"  Has Parent: {has_parent}")
+        if has_parent:
+            print(f"  Parent Length: {len(chunk['parent_content'])} chars")
         print(f"  Content preview: {chunk['content'][:150]}...")
         print()

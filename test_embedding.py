@@ -39,10 +39,17 @@ def main():
         print(f"\nTruy vấn thử nghiệm: '{query}'")
         results = vector_store.similarity_search_with_score(query, k=2)
         
+        from src.vector_store import get_parent_content
         for i, (doc, score) in enumerate(results):
             print(f"\n--- Kết quả {i+1} (Score: {score:.4f}) ---")
             print(f"Metadata: {doc.metadata}")
             print(f"Trích đoạn: {doc.page_content[:200]}...")
+            
+            # Kiểm tra xem chunk này có parent content không
+            # ChromaDB lưu nội dung parent trong _parent_store theo index nội bộ, 
+            # tuy nhiên để test đơn giản ta chỉ check metadata
+            if doc.metadata.get("has_parent"):
+                print("Có Parent Content (Section đầy đủ)")
 
 if __name__ == "__main__":
     main()
