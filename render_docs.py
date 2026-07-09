@@ -10,8 +10,8 @@ except ImportError:
 def main():
     # Base directories
     base_dir = os.path.dirname(os.path.abspath(__file__))
-    doc1_dir = os.path.join(base_dir, "data", "documents", "DOC1")
-    output_base_dir = os.path.join(base_dir, "data", "documents")
+    doc1_dir = os.path.join(base_dir, "data", "documents")
+    output_base_dir = os.path.join(base_dir, "data", "documents", "DOC_004")
 
     if not os.path.exists(doc1_dir):
         print(f"Error: Directory '{doc1_dir}' does not exist.")
