@@ -1,0 +1,756 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Sổ đỏ OCR &amp; Trợ lý</title>
+<style>
+  :root {
+    --bg: #f6f5f2;
+    --panel: #ffffff;
+    --border: #e3e0d8;
+    --text: #23211d;
+    --muted: #6b675e;
+    --accent: #8a5a3b;
+    --accent-dark: #6e4429;
+    --accent-soft: #f1e4da;
+    --danger: #b3413a;
+    --ok: #3d7a4f;
+    --radius: 10px;
+    font-family: "Segoe UI", "Inter", -apple-system, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1c1a17;
+      --panel: #262320;
+      --border: #3a352e;
+      --text: #ece7de;
+      --muted: #a39c8f;
+      --accent: #d99a6c;
+      --accent-dark: #eab183;
+      --accent-soft: #3a2c22;
+      --danger: #e08078;
+      --ok: #7dbb90;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    display: grid;
+    grid-template-columns: 260px 1fr;
+    min-height: 100vh;
+  }
+  aside {
+    border-right: 1px solid var(--border);
+    padding: 20px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  aside h1 { font-size: 17px; margin: 0; letter-spacing: 0.2px; }
+  aside h1 span { color: var(--accent); }
+  #doc-list { display: flex; flex-direction: column; gap: 6px; overflow-y: auto; }
+  .doc-item {
+    padding: 8px 10px; border-radius: var(--radius); cursor: pointer;
+    font-size: 13.5px; border: 1px solid transparent;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .doc-item:hover { background: var(--accent-soft); }
+  .doc-item.active { background: var(--accent-soft); border-color: var(--accent); font-weight: 600; }
+  .doc-item .doc-info { flex: 1; min-width: 0; }
+  .doc-item .holders { display: block; color: var(--muted); font-size: 12px; font-weight: 400; }
+  .doc-item .del-btn {
+    background: none; border: none; cursor: pointer; font-size: 14px;
+    color: var(--muted); padding: 4px 6px; border-radius: 6px;
+    opacity: 0; transition: opacity .12s;
+  }
+  .doc-item:hover .del-btn { opacity: 1; }
+  .doc-item .del-btn:hover { background: rgba(179,65,58,.15); color: var(--danger); }
+
+  /* ---- hộp thoại xác nhận xoá ---- */
+  #confirm-modal {
+    display: none; position: fixed; inset: 0; z-index: 70;
+    background: rgba(0,0,0,.55); align-items: center; justify-content: center;
+  }
+  #confirm-modal.open { display: flex; }
+  #confirm-modal .cm-box {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+    padding: 22px 24px; max-width: 440px; width: calc(100vw - 48px);
+    box-shadow: 0 10px 40px rgba(0,0,0,.35);
+  }
+  #confirm-modal .cm-title { font-size: 16px; font-weight: 700; color: var(--danger); margin-bottom: 10px; }
+  #confirm-modal .cm-text { font-size: 13.5px; line-height: 1.6; color: var(--text); margin-bottom: 18px; }
+  #confirm-modal .cm-text b { color: var(--danger); }
+  #confirm-modal .cm-actions { display: flex; justify-content: flex-end; gap: 10px; }
+  #confirm-modal button {
+    border-radius: 8px; padding: 8px 18px; font-size: 13.5px; cursor: pointer; font-weight: 600;
+  }
+  #confirm-modal #cm-cancel { background: var(--bg); border: 1px solid var(--border); color: var(--text); }
+  #confirm-modal #cm-ok { background: var(--danger); border: none; color: #fff; }
+  #confirm-modal #cm-ok:hover { filter: brightness(1.1); }
+  .del-doc-btn {
+    background: none; border: 1px solid var(--danger); color: var(--danger);
+    border-radius: 8px; padding: 5px 14px; font-size: 12.5px; cursor: pointer; font-weight: 600;
+  }
+  .del-doc-btn:hover { background: rgba(179,65,58,.12); }
+
+  main { padding: 24px 32px; overflow-y: auto; max-width: 1080px; }
+  .tabs { display: flex; gap: 4px; margin-bottom: 20px; border-bottom: 1px solid var(--border); }
+  .tab-btn {
+    background: none; border: none; padding: 10px 18px; cursor: pointer;
+    font-size: 14.5px; color: var(--muted); border-bottom: 2px solid transparent;
+  }
+  .tab-btn.active { color: var(--accent-dark); border-bottom-color: var(--accent); font-weight: 600; }
+  .panel { display: none; }
+  .panel.active { display: block; }
+
+  .card {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 20px; margin-bottom: 18px;
+  }
+  .drop-zone {
+    border: 1.5px dashed var(--border); border-radius: var(--radius);
+    padding: 28px; text-align: center; color: var(--muted); cursor: pointer;
+    transition: border-color .15s;
+  }
+  .drop-zone.dragover { border-color: var(--accent); background: var(--accent-soft); }
+  input[type="text"] {
+    font-size: 14px; padding: 9px 12px; border-radius: 8px; border: 1px solid var(--border);
+    background: var(--panel); color: var(--text); width: 100%;
+  }
+  button.primary {
+    background: var(--accent); color: #fff; border: none; border-radius: 8px;
+    padding: 9px 18px; font-size: 14px; cursor: pointer; font-weight: 600;
+  }
+  button.primary:hover { background: var(--accent-dark); }
+  button.primary:disabled { opacity: .5; cursor: not-allowed; }
+
+  /* ---- preview file đã chọn ---- */
+  #file-preview { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
+  .preview-thumb {
+    position: relative; width: 90px; height: 120px; border: 1px solid var(--border);
+    border-radius: 8px; overflow: hidden; background: var(--accent-soft);
+  }
+  .preview-thumb img { width: 100%; height: 100%; object-fit: cover; }
+  .preview-thumb .fname {
+    position: absolute; bottom: 0; left: 0; right: 0; font-size: 10px;
+    background: rgba(0,0,0,.55); color: #fff; padding: 2px 4px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .preview-doc {
+    width: 90px; height: 120px; border: 1px solid var(--border); border-radius: 8px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 6px; background: var(--accent-soft); font-size: 11px; color: var(--muted);
+    padding: 6px; text-align: center; word-break: break-all;
+  }
+  .preview-doc .ico { font-size: 26px; }
+
+  /* ---- gallery ảnh tài liệu ---- */
+  .img-strip { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 4px; }
+  .img-strip .shot {
+    width: 130px; height: 175px; border: 1px solid var(--border); border-radius: 8px;
+    overflow: hidden; cursor: zoom-in; position: relative; background: var(--accent-soft);
+  }
+  .img-strip .shot img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .img-strip .shot .pageno {
+    position: absolute; top: 6px; left: 6px; background: rgba(0,0,0,.6); color: #fff;
+    font-size: 11px; padding: 1px 7px; border-radius: 10px;
+  }
+
+  /* ---- lightbox xem ảnh ---- */
+  #lightbox {
+    display: none; position: fixed; inset: 0; z-index: 60;
+    background: rgba(0,0,0,.82); align-items: center; justify-content: center;
+  }
+  #lightbox.open { display: flex; }
+  #lightbox img { max-width: 88vw; max-height: 88vh; border-radius: 6px; box-shadow: 0 8px 40px rgba(0,0,0,.5); }
+  #lightbox .nav {
+    position: absolute; top: 50%; transform: translateY(-50%);
+    background: rgba(255,255,255,.14); border: none; color: #fff; font-size: 26px;
+    width: 46px; height: 46px; border-radius: 50%; cursor: pointer;
+  }
+  #lightbox .nav:hover { background: rgba(255,255,255,.3); }
+  #lightbox #lb-prev { left: 22px; }
+  #lightbox #lb-next { right: 22px; }
+  #lightbox #lb-close {
+    position: absolute; top: 18px; right: 22px; background: rgba(255,255,255,.14);
+    border: none; color: #fff; font-size: 20px; width: 40px; height: 40px;
+    border-radius: 50%; cursor: pointer;
+  }
+  #lightbox #lb-label {
+    position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%);
+    color: #fff; font-size: 13px; background: rgba(0,0,0,.5); padding: 4px 14px; border-radius: 14px;
+  }
+
+  /* ---- field theo nhóm ---- */
+  .section-title {
+    display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 700;
+    color: var(--accent-dark); margin: 20px 0 10px; text-transform: uppercase; letter-spacing: .04em;
+  }
+  .section-title:first-child { margin-top: 0; }
+  .field-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px;
+  }
+  .field-box {
+    border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; background: var(--bg);
+  }
+  .field-box .k { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 3px; }
+  .field-box .v { font-size: 14.5px; font-weight: 600; word-break: break-word; }
+  .field-box .v.none { color: var(--muted); font-weight: 400; font-style: italic; }
+  .holder-card {
+    border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: 8px;
+    padding: 12px 14px; background: var(--bg); margin-bottom: 10px;
+  }
+  .holder-card .name { font-size: 15.5px; font-weight: 700; margin-bottom: 6px; }
+  .holder-card .role-chip {
+    display: inline-block; font-size: 11px; background: var(--accent-soft); color: var(--accent-dark);
+    padding: 1px 9px; border-radius: 10px; margin-right: 8px; vertical-align: 2px;
+  }
+  .holder-card .meta { display: flex; flex-wrap: wrap; gap: 6px 22px; font-size: 13px; color: var(--muted); }
+  .holder-card .meta b { color: var(--text); font-weight: 600; }
+
+  table.kv { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  table.kv th, table.kv td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  table.kv th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+  table.kv td.lbl { color: var(--muted); width: 34%; }
+  table.kv td.val { font-weight: 500; word-break: break-word; }
+
+  details.block { border: 1px solid var(--border); border-radius: 8px; margin-bottom: 10px; background: var(--bg); }
+  details.block summary {
+    cursor: pointer; padding: 10px 14px; font-size: 13.5px; font-weight: 600; color: var(--accent-dark);
+    user-select: none;
+  }
+  details.block .inner { padding: 4px 14px 14px; }
+  .ft-line { font-size: 13px; padding: 3px 0; border-bottom: 1px dashed var(--border); }
+  .ft-line .sec-tag { display: inline-block; font-size: 10px; color: var(--muted); min-width: 90px; }
+
+  /* ---- JSON view ---- */
+  pre.json-view {
+    background: #1f1d1a; color: #e8e2d6; padding: 16px; border-radius: 8px; font-size: 12.5px;
+    overflow: auto; max-height: 560px; line-height: 1.55;
+  }
+  .j-key { color: #8ec7ff; }
+  .j-str { color: #b8e09a; }
+  .j-num { color: #f2c163; }
+  .j-null { color: #999; font-style: italic; }
+  .json-tools { display: flex; align-items: center; gap: 16px; margin-bottom: 8px; font-size: 13px; color: var(--muted); }
+
+  .note-banner { margin-top: 12px; padding: 10px 12px; border-radius: 8px; font-size: 13px; color: var(--muted); }
+  .note-banner.warn { background: rgba(179,65,58,0.12); color: var(--danger); border: 1px solid var(--danger); }
+
+  .result-tabs { display: flex; gap: 8px; margin: 4px 0 14px; }
+  .result-tabs button {
+    background: var(--accent-soft); border: 1px solid var(--border); border-radius: 6px;
+    padding: 5px 14px; font-size: 12.5px; cursor: pointer; color: var(--text);
+  }
+  .result-tabs button.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+  #chat-window { display: flex; flex-direction: column; gap: 12px; min-height: 320px; margin-bottom: 14px; }
+  .msg { max-width: 80%; padding: 10px 14px; border-radius: 12px; font-size: 14px; line-height: 1.55; white-space: pre-wrap; }
+  .msg.user { align-self: flex-end; background: var(--accent); color: #fff; }
+  .msg.bot { align-self: flex-start; background: var(--accent-soft); color: var(--text); }
+  .msg.bot .method-tag { display: inline-block; font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin-bottom: 4px; }
+  .chat-input-row { display: flex; gap: 8px; }
+  .empty-hint { color: var(--muted); font-size: 13.5px; }
+  .loading { color: var(--muted); font-size: 13px; }
+</style>
+</head>
+<body>
+
+<aside>
+  <h1>Sổ đỏ<span>OCR</span></h1>
+  <div class="empty-hint">Tài liệu đã trích xuất</div>
+  <div id="doc-list"></div>
+</aside>
+
+<main>
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="extract">Trích xuất</button>
+    <button class="tab-btn" data-tab="chat">Hỏi-đáp</button>
+  </div>
+
+  <section class="panel active" id="panel-extract">
+    <div class="card">
+      <p style="margin-top:0;color:var(--muted);font-size:13.5px;">
+        Đưa ảnh / PDF / Word (1 hoặc nhiều trang của cùng 1 sổ) vào — hệ thống OCR &amp; trích xuất
+        <strong>toàn bộ thông tin</strong> ngay, không cần hỏi từng câu.
+      </p>
+      <div class="drop-zone" id="drop-zone">
+        Kéo/thả file vào đây, hoặc bấm để chọn (.png/.jpg/.pdf/.docx)
+        <input type="file" id="file-input" accept=".png,.jpg,.jpeg,.pdf,.docx" multiple style="display:none" />
+      </div>
+      <div id="file-preview"></div>
+      <div style="display:flex;gap:10px;margin-top:14px;align-items:center;flex-wrap:wrap;">
+        <input type="text" id="doc-id-input" placeholder="Mã tài liệu (để trống = tự sinh)" style="max-width:280px;" />
+        <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted);cursor:pointer;">
+          <input type="checkbox" id="embed-checkbox" />
+          Nhúng để hỏi-đáp (chậm hơn)
+        </label>
+        <button class="primary" id="extract-btn">Trích xuất</button>
+      </div>
+    </div>
+    <div id="extract-result"></div>
+  </section>
+
+  <section class="panel" id="panel-chat">
+    <div class="card">
+      <div id="chat-window">
+        <div class="empty-hint">Hỏi bất cứ điều gì về các tài liệu đã trích xuất, ví dụ: "Chủ sở hữu của DOC_001 là ai?", "Có bao nhiêu tài liệu?"</div>
+      </div>
+      <div class="chat-input-row">
+        <input type="text" id="chat-input" placeholder="Nhập câu hỏi..." />
+        <button class="primary" id="chat-send">Gửi</button>
+      </div>
+    </div>
+  </section>
+</main>
+
+<div id="lightbox">
+  <button id="lb-close" title="Đóng">✕</button>
+  <button class="nav" id="lb-prev" title="Trang trước">‹</button>
+  <img id="lb-img" src="" alt="" />
+  <button class="nav" id="lb-next" title="Trang sau">›</button>
+  <div id="lb-label"></div>
+</div>
+
+<div id="confirm-modal">
+  <div class="cm-box">
+    <div class="cm-title">⚠️ Xác nhận xoá tài liệu</div>
+    <div class="cm-text" id="cm-text"></div>
+    <div class="cm-actions">
+      <button id="cm-cancel">Huỷ</button>
+      <button id="cm-ok">Xoá vĩnh viễn</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const state = { files: [], lbImages: [], lbIndex: 0, lastResult: null };
+
+function escapeHtml(str) {
+  return String(str ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+/* ================= Tabs ================= */
+document.querySelectorAll(".tab-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+    document.querySelectorAll(".panel").forEach(p => p.classList.remove("active"));
+    btn.classList.add("active");
+    document.getElementById("panel-" + btn.dataset.tab).classList.add("active");
+  });
+});
+
+/* ================= Danh sách tài liệu ================= */
+async function loadDocs(activeId) {
+  const res = await fetch("/api/documents");
+  const data = await res.json();
+  const list = document.getElementById("doc-list");
+  list.innerHTML = "";
+  data.documents.forEach(doc => {
+    const el = document.createElement("div");
+    el.className = "doc-item" + (doc.doc_id === activeId ? " active" : "");
+    el.dataset.id = doc.doc_id;
+    el.innerHTML = `
+      <div class="doc-info">${escapeHtml(doc.doc_id)}<span class="holders">${escapeHtml(doc.holders.join(", ") || "(không rõ chủ)")}</span></div>
+      <button class="del-btn" title="Xoá tài liệu này">🗑</button>`;
+    el.querySelector(".doc-info").addEventListener("click", () => openDoc(doc.doc_id));
+    el.querySelector(".del-btn").addEventListener("click", e => {
+      e.stopPropagation();
+      confirmDelete(doc.doc_id);
+    });
+    list.appendChild(el);
+  });
+}
+
+async function openDoc(docId) {
+  document.querySelectorAll(".doc-item").forEach(el =>
+    el.classList.toggle("active", el.dataset.id === docId));
+  const res = await fetch(`/api/documents/${docId}`);
+  const data = await res.json();
+  document.querySelector(".tab-btn[data-tab='extract']").click();
+  renderResult(data);
+}
+
+/* ================= Xoá tài liệu (kèm xác nhận) ================= */
+const confirmModal = document.getElementById("confirm-modal");
+let pendingDeleteId = null;
+
+function confirmDelete(docId) {
+  pendingDeleteId = docId;
+  document.getElementById("cm-text").innerHTML =
+    `Bạn có chắc chắn muốn xoá tài liệu <b>${escapeHtml(docId)}</b>?<br><br>` +
+    `Hành động này sẽ xoá <b>vĩnh viễn</b> khỏi máy: dữ liệu trích xuất (JSON), ` +
+    `báo cáo, ảnh đã lưu, ảnh gốc trong thư mục nguồn (nếu có) và dữ liệu hỏi-đáp ` +
+    `của tài liệu này. <b>Không thể hoàn tác.</b>`;
+  confirmModal.classList.add("open");
+}
+
+document.getElementById("cm-cancel").addEventListener("click", () => {
+  pendingDeleteId = null;
+  confirmModal.classList.remove("open");
+});
+confirmModal.addEventListener("click", e => {
+  if (e.target === confirmModal) { pendingDeleteId = null; confirmModal.classList.remove("open"); }
+});
+document.getElementById("cm-ok").addEventListener("click", async () => {
+  if (!pendingDeleteId) return;
+  const docId = pendingDeleteId;
+  pendingDeleteId = null;
+  const okBtn = document.getElementById("cm-ok");
+  okBtn.disabled = true; okBtn.textContent = "Đang xoá...";
+  try {
+    const res = await fetch(`/api/documents/${docId}`, { method: "DELETE" });
+    const data = await res.json();
+    if (data.error) {
+      alert("Lỗi: " + data.error);
+    } else {
+      // Nếu kết quả đang hiển thị chính là tài liệu vừa xoá -> dọn khung
+      if (state.lastResult && state.lastResult.doc_id === docId) {
+        document.getElementById("extract-result").innerHTML =
+          `<div class="empty-hint" style="padding:8px 4px">Đã xoá tài liệu ${escapeHtml(docId)} (${escapeHtml((data.deleted || []).join(", "))}).</div>`;
+        state.lastResult = null;
+      }
+      loadDocs();
+    }
+  } catch (e) {
+    alert("Lỗi khi xoá: " + e);
+  } finally {
+    okBtn.disabled = false; okBtn.textContent = "Xoá vĩnh viễn";
+    confirmModal.classList.remove("open");
+  }
+});
+
+/* ================= Upload + preview ================= */
+const dropZone = document.getElementById("drop-zone");
+const fileInput = document.getElementById("file-input");
+
+// Reset value trước khi mở dialog: nếu không, chọn lại ĐÚNG file cũ sẽ không
+// bắn sự kiện change (value không đổi) -> preview/state giữ nguyên file cũ.
+dropZone.addEventListener("click", () => { fileInput.value = ""; fileInput.click(); });
+dropZone.addEventListener("dragover", e => { e.preventDefault(); dropZone.classList.add("dragover"); });
+dropZone.addEventListener("dragleave", () => dropZone.classList.remove("dragover"));
+dropZone.addEventListener("drop", e => {
+  e.preventDefault();
+  dropZone.classList.remove("dragover");
+  setFiles([...e.dataTransfer.files]);
+});
+fileInput.addEventListener("change", () => setFiles([...fileInput.files]));
+
+function setFiles(files) {
+  state.files = files;
+  const box = document.getElementById("file-preview");
+  box.innerHTML = "";
+  files.forEach(f => {
+    if (/\.(png|jpe?g)$/i.test(f.name)) {
+      const url = URL.createObjectURL(f);
+      const d = document.createElement("div");
+      d.className = "preview-thumb";
+      d.innerHTML = `<img src="${url}" alt=""><span class="fname">${escapeHtml(f.name)}</span>`;
+      box.appendChild(d);
+    } else {
+      const d = document.createElement("div");
+      d.className = "preview-doc";
+      d.innerHTML = `<span class="ico">${/\.pdf$/i.test(f.name) ? "📄" : "📝"}</span>${escapeHtml(f.name)}`;
+      box.appendChild(d);
+    }
+  });
+}
+
+document.getElementById("extract-btn").addEventListener("click", async () => {
+  if (!state.files.length) { alert("Chọn ít nhất 1 file trước."); return; }
+  const btn = document.getElementById("extract-btn");
+  btn.disabled = true;
+  const resultBox = document.getElementById("extract-result");
+  resultBox.innerHTML = `<div class="loading">Đang OCR &amp; trích xuất, mỗi trang mất khoảng 20-60 giây trên CPU...</div>`;
+
+  const form = new FormData();
+  state.files.forEach(f => form.append("files", f));
+  const docId = document.getElementById("doc-id-input").value.trim();
+  if (docId) form.append("doc_id", docId);
+  form.append("embed", document.getElementById("embed-checkbox").checked ? "true" : "false");
+
+  try {
+    const res = await fetch("/api/extract", { method: "POST", body: form });
+    const data = await res.json();
+    if (data.error || data.detail) {
+      resultBox.innerHTML = `<div class="card" style="color:var(--danger)">${escapeHtml(data.error || data.detail)}</div>`;
+    } else {
+      renderResult(data);
+      loadDocs(data.doc_id);
+      // Dọn khung chọn file sau khi trích xuất xong - tránh giữ lại preview
+      // của file cũ khi người dùng chuẩn bị upload tài liệu tiếp theo.
+      state.files = [];
+      document.getElementById("file-preview").innerHTML = "";
+      fileInput.value = "";
+      document.getElementById("doc-id-input").value = "";
+    }
+  } catch (e) {
+    resultBox.innerHTML = `<div class="card" style="color:var(--danger)">Lỗi: ${escapeHtml(e)}</div>`;
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+/* ================= Helpers hiển thị field ================= */
+function fmtVal(v) {
+  if (v === null || v === undefined || v === "") return `<span class="v none">không có dữ liệu</span>`;
+  return `<span class="v">${escapeHtml(v)}</span>`;
+}
+function fieldBox(label, value) {
+  return `<div class="field-box"><div class="k">${escapeHtml(label)}</div>${fmtVal(value)}</div>`;
+}
+
+function holderCards(j) {
+  const holders = (j.holders && j.holders.length) ? j.holders : (j.holder ? [ { ...j.holder, role: null } ] : []);
+  if (!holders.length || holders.every(h => !h.name)) {
+    return `<div class="empty-hint">Không nhận diện được chủ sở hữu.</div>`;
+  }
+  return holders.map((h, i) => `
+    <div class="holder-card">
+      <div class="name">${h.role ? `<span class="role-chip">${escapeHtml(h.role)}</span>` : ""}${escapeHtml(h.name || "(không rõ tên)")}</div>
+      <div class="meta">
+        <span>CMND/CCCD: <b>${escapeHtml(h.id_number || "—")}</b></span>
+        <span>Năm sinh: <b>${escapeHtml(h.birthday || "—")}</b></span>
+        <span>Địa chỉ: <b>${escapeHtml(h.address || (j.holder && j.holder.address) || "—")}</b></span>
+      </div>
+    </div>`).join("");
+}
+
+function changeHistoryHtml(j) {
+  const ch = j.change_history || [];
+  if (!ch.length) return `<div class="empty-hint">Không có lịch sử biến động được ghi nhận.</div>`;
+  return `<table class="kv"><tr><th>#</th><th>Ngày</th><th>Số hồ sơ</th><th>Nơi ký</th><th>Nội dung</th></tr>` +
+    ch.map((r, i) => `<tr>
+      <td>${i + 1}</td>
+      <td>${escapeHtml(r.decision_date || "—")}</td>
+      <td>${escapeHtml(r.application_number || "—")}</td>
+      <td>${escapeHtml(r.decision_place || "—")}</td>
+      <td>${escapeHtml(r.content || "")}</td>
+    </tr>`).join("") + `</table>`;
+}
+
+function extraFieldsHtml(j) {
+  const ef = j.extra_fields || [];
+  if (!ef.length) return `<div class="empty-hint">Không có thông tin bổ sung.</div>`;
+  return `<table class="kv"><tr><th>Nhãn trên giấy</th><th>Giá trị</th></tr>` +
+    ef.map(x => `<tr><td class="lbl">${escapeHtml(x.label)}</td><td class="val">${escapeHtml(x.value)}</td></tr>`).join("") +
+    `</table>`;
+}
+
+const SECTION_VI = {
+  holder_info: "Chủ sở hữu", land_info: "Thửa đất", asset_info: "Tài sản",
+  land_diagram: "Sơ đồ", owner_changes: "Đổi chủ", property_changes: "Đổi tài sản",
+  post_issue_changes: "Sau cấp GCN", unknown: "Khác",
+};
+function fullTextHtml(j) {
+  const ft = j.full_text || [];
+  if (!ft.length) return `<div class="empty-hint">Không có dữ liệu.</div>`;
+  return ft.map(l =>
+    `<div class="ft-line"><span class="sec-tag">[${escapeHtml(SECTION_VI[l.section] || l.section)}]</span> ${escapeHtml(l.text)}</div>`
+  ).join("");
+}
+
+/* ================= JSON có màu ================= */
+function colorJson(obj) {
+  const raw = JSON.stringify(obj, null, 2);
+  return escapeHtml(raw)
+    .replace(/(&quot;[^&]*?&quot;)(\s*:)/g, `<span class="j-key">$1</span>$2`)
+    .replace(/:(\s*)(&quot;(?:[^&]|&(?!quot;))*?&quot;)/g, `:$1<span class="j-str">$2</span>`)
+    .replace(/:(\s*)(-?\d+(?:\.\d+)?)/g, `:$1<span class="j-num">$2</span>`)
+    .replace(/:(\s*)(null|true|false)/g, `:$1<span class="j-null">$2</span>`);
+}
+
+/* ================= Lightbox ================= */
+const lb = document.getElementById("lightbox");
+function openLightbox(images, index) {
+  state.lbImages = images; state.lbIndex = index;
+  updateLightbox();
+  lb.classList.add("open");
+}
+function updateLightbox() {
+  document.getElementById("lb-img").src = state.lbImages[state.lbIndex];
+  document.getElementById("lb-label").textContent = `Trang ${state.lbIndex + 1} / ${state.lbImages.length}`;
+}
+function lbMove(d) {
+  state.lbIndex = (state.lbIndex + d + state.lbImages.length) % state.lbImages.length;
+  updateLightbox();
+}
+document.getElementById("lb-close").addEventListener("click", () => lb.classList.remove("open"));
+document.getElementById("lb-prev").addEventListener("click", e => { e.stopPropagation(); lbMove(-1); });
+document.getElementById("lb-next").addEventListener("click", e => { e.stopPropagation(); lbMove(1); });
+lb.addEventListener("click", e => { if (e.target === lb) lb.classList.remove("open"); });
+document.addEventListener("keydown", e => {
+  if (!lb.classList.contains("open")) return;
+  if (e.key === "Escape") lb.classList.remove("open");
+  if (e.key === "ArrowLeft") lbMove(-1);
+  if (e.key === "ArrowRight") lbMove(1);
+});
+
+/* ================= Render kết quả ================= */
+function renderResult(data) {
+  state.lastResult = data;
+  const j = data.json || {};
+  // Cache-bust: cùng doc_id -> cùng URL ảnh, trình duyệt sẽ dùng lại ảnh CŨ
+  // trong cache dù file trên đĩa đã bị thay khi upload lại. Gắn ?v=timestamp
+  // để mỗi lần render luôn tải ảnh mới nhất.
+  const images = (data.images || []).map(u => u + (u.includes("?") ? "&" : "?") + "v=" + Date.now());
+  const resultBox = document.getElementById("extract-result");
+
+  const imgStrip = images.length ? `
+    <div class="section-title">🖼 Ảnh tài liệu (${images.length} trang — bấm để phóng to)</div>
+    <div class="img-strip">
+      ${images.map((u, i) => `
+        <div class="shot" data-idx="${i}">
+          <span class="pageno">Trang ${i + 1}</span>
+          <img src="${u}" loading="lazy" alt="Trang ${i + 1}">
+        </div>`).join("")}
+    </div>` : "";
+
+  const failedWarn = (j.failed_pages && j.failed_pages.length) ? `
+    <div class="note-banner warn">⚠️ ${j.failed_pages.length} trang xử lý lỗi (thông tin có thể thiếu): ${j.failed_pages.map(p => escapeHtml(p.page_name)).join(", ")}</div>` : "";
+
+  resultBox.innerHTML = `
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+        <h3 style="margin:0">${escapeHtml(data.doc_id)}</h3>
+        <button class="del-doc-btn" id="result-del-btn">🗑 Xoá tài liệu</button>
+      </div>
+      <div class="result-tabs">
+        <button class="active" data-view="fields">Thông tin trích xuất</button>
+        <button data-view="json">JSON</button>
+      </div>
+
+      <div data-panel="fields">
+        ${imgStrip}
+        ${failedWarn}
+
+        <div class="section-title">👤 Chủ sở hữu / Người sử dụng đất</div>
+        ${holderCards(j)}
+
+        <div class="section-title">🗺 Thửa đất</div>
+        <div class="field-grid">
+          ${fieldBox("Số thửa đất", j.land_parcel?.parcel_number)}
+          ${fieldBox("Tờ bản đồ số", j.land_parcel?.map_sheet_number)}
+          ${fieldBox("Diện tích (m²)", j.land_parcel?.area_m2)}
+        </div>
+
+        <div class="section-title">🏠 Tài sản gắn liền với đất</div>
+        <div class="field-box" style="margin-bottom:10px">
+          <div class="k">Tên / mô tả tài sản</div>${fmtVal(j.asset?.asset_name)}
+        </div>
+        <div class="field-grid">
+          ${fieldBox("Diện tích sử dụng (m²)", j.asset?.usable_area_m2)}
+          ${fieldBox("Hình thức sở hữu", j.asset?.ownership_form)}
+          ${fieldBox("Thời hạn sở hữu", j.asset?.ownership_term)}
+        </div>
+
+        <div class="section-title">🕘 Lịch sử biến động</div>
+        ${changeHistoryHtml(j)}
+
+        <div style="height:14px"></div>
+        <details class="block" open>
+          <summary>Thông tin bổ sung — mọi dòng "nhãn: giá trị" trên giấy (${(j.extra_fields || []).length})</summary>
+          <div class="inner">${extraFieldsHtml(j)}</div>
+        </details>
+        <details class="block">
+          <summary>Toàn văn OCR — tất cả chữ đọc được (${(j.full_text || []).length} dòng)</summary>
+          <div class="inner">${fullTextHtml(j)}</div>
+        </details>
+      </div>
+
+      <div data-panel="json" style="display:none">
+        <div class="json-tools">
+          <label style="cursor:pointer;display:flex;gap:6px;align-items:center;">
+            <input type="checkbox" id="json-fulltext-toggle"> Kèm full_text (dài)
+          </label>
+          <button class="primary" style="padding:4px 12px;font-size:12px" id="json-copy">Sao chép JSON</button>
+        </div>
+        <pre class="json-view" id="json-pre"></pre>
+      </div>
+
+      ${data.note ? `<div class="note-banner ${data.note.startsWith("⚠️") ? "warn" : ""}">${escapeHtml(data.note)}</div>` : ""}
+    </div>
+  `;
+
+  // nút xoá trong khung kết quả
+  document.getElementById("result-del-btn").addEventListener("click", () => confirmDelete(data.doc_id));
+
+  // tab con
+  resultBox.querySelectorAll(".result-tabs button").forEach(b => {
+    b.addEventListener("click", () => {
+      resultBox.querySelectorAll(".result-tabs button").forEach(x => x.classList.remove("active"));
+      b.classList.add("active");
+      resultBox.querySelectorAll("[data-panel]").forEach(p => p.style.display = "none");
+      resultBox.querySelector(`[data-panel="${b.dataset.view}"]`).style.display = "block";
+    });
+  });
+
+  // gallery -> lightbox
+  resultBox.querySelectorAll(".img-strip .shot").forEach(el => {
+    el.addEventListener("click", () => openLightbox(images, parseInt(el.dataset.idx)));
+  });
+
+  // JSON view (mặc định ẩn full_text cho gọn)
+  const renderJson = () => {
+    const withFT = document.getElementById("json-fulltext-toggle").checked;
+    const objCopy = { ...j };
+    if (!withFT) delete objCopy.full_text;
+    document.getElementById("json-pre").innerHTML = colorJson(objCopy);
+  };
+  document.getElementById("json-fulltext-toggle").addEventListener("change", renderJson);
+  document.getElementById("json-copy").addEventListener("click", () => {
+    navigator.clipboard.writeText(JSON.stringify(j, null, 2));
+    document.getElementById("json-copy").textContent = "Đã sao chép ✓";
+    setTimeout(() => document.getElementById("json-copy").textContent = "Sao chép JSON", 1500);
+  });
+  renderJson();
+}
+
+/* ================= Chat ================= */
+const chatWindow = document.getElementById("chat-window");
+const chatInput = document.getElementById("chat-input");
+
+function addMsg(role, text, method) {
+  const el = document.createElement("div");
+  el.className = "msg " + role;
+  el.innerHTML = (role === "bot" && method ? `<span class="method-tag">${escapeHtml(method)}</span><br>` : "") + escapeHtml(text);
+  chatWindow.appendChild(el);
+  chatWindow.scrollTop = chatWindow.scrollHeight;
+}
+
+async function sendChat() {
+  const q = chatInput.value.trim();
+  if (!q) return;
+  addMsg("user", q);
+  chatInput.value = "";
+  const loadingEl = document.createElement("div");
+  loadingEl.className = "loading";
+  loadingEl.textContent = "Đang suy nghĩ...";
+  chatWindow.appendChild(loadingEl);
+  chatWindow.scrollTop = chatWindow.scrollHeight;
+
+  try {
+    const res = await fetch("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question: q }),
+    });
+    const data = await res.json();
+    loadingEl.remove();
+    addMsg("bot", data.answer, data.method);
+  } catch (e) {
+    loadingEl.remove();
+    addMsg("bot", "Lỗi: " + e, "error");
+  }
+}
+
+document.getElementById("chat-send").addEventListener("click", sendChat);
+chatInput.addEventListener("keydown", e => { if (e.key === "Enter") sendChat(); });
+
+loadDocs();
+</script>
+</body>
+</html>

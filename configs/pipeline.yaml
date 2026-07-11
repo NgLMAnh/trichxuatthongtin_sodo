@@ -87,6 +87,10 @@ field_extraction:
       - "Tờ bản đồ số"
       - "Số tờ bản đồ"
     target_sections: ["land_info"]
+    # CHỈ "right", KHÔNG thêm "below": khi nhãn cột nằm sát nhãn cột khác (bảng
+    # nhiều cột hẹp), tìm "below" dễ lấy nhầm giá trị ở CỘT KHÁC do sai số bbox
+    # OCR vài px giữa các dòng - thà báo "không có dữ liệu" còn hơn giá trị sai
+    # (bug thật đã gặp: lấy nhầm số thửa làm tờ bản đồ số).
     direction: ["right"]
     regex: "\\d+(?:[\\-\\.\\/]\\d+)?"
 

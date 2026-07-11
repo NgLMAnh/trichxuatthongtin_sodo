@@ -26,9 +26,11 @@ def main():
     documents_dir = os.path.join(base_dir, "data", "documents")
     outputs_dir = os.path.join(base_dir, "outputs", "predictions")
     md_dir = os.path.join(base_dir, "outputs", "markdowns")
-    
+    reports_dir = os.path.join(base_dir, "outputs", "reports")
+
     os.makedirs(outputs_dir, exist_ok=True)
     os.makedirs(md_dir, exist_ok=True)
+    os.makedirs(reports_dir, exist_ok=True)
     
     # 1. Load pipeline configuration
     try:
@@ -68,16 +70,45 @@ def main():
     print("=" * 80)
     
     # 4. Process each document folder
+    from src.file_converter import convert_to_images, SUPPORTED_EXTENSIONS
+
     for doc_id in doc_folders:
         doc_path = os.path.join(documents_dir, doc_id)
-        image_files = sorted([os.path.join(doc_path, f) for f in os.listdir(doc_path) if f.lower().endswith(('.png', '.jpg', '.jpeg'))])
-        
+        raw_files = sorted(
+            os.path.join(doc_path, f) for f in os.listdir(doc_path) if f.lower().endswith(SUPPORTED_EXTENSIONS)
+        )
+
+        if not raw_files:
+            print(f"Skipping {doc_id}: No supported files found (.png/.jpg/.jpeg/.pdf/.docx).")
+            continue
+
+        image_exts = (".png", ".jpg", ".jpeg")
+        if all(f.lower().endswith(image_exts) for f in raw_files):
+            # Trường hợp phổ biến: toàn ảnh sẵn có - dùng thẳng, không cần convert.
+            image_files = raw_files
+        else:
+            # Có PDF/Word lẫn trong thư mục -> render thành ảnh. KHÔNG tự động
+            # xoay trang ở đây (auto_rotate=False): đây là corpus/dữ liệu đã có
+            # sẵn, một số mẫu scan gốc nằm ngang HỢP LỆ (khổ giấy scan ngang) -
+            # tự ý xoay sẽ phá hỏng dữ liệu đã hiệu chỉnh sẵn theo đúng hướng
+            # gốc (bug thật đã gặp). Tính năng tự xoay chỉ áp dụng cho tài liệu
+            # MỚI người dùng đưa vào qua webapp/extract_image.py.
+            convert_dir = os.path.join(doc_path, "_converted")
+            if os.path.isdir(convert_dir):
+                import shutil as _shutil
+                _shutil.rmtree(convert_dir)
+            image_files = []
+            for raw in raw_files:
+                pages, _ = convert_to_images(raw, convert_dir, auto_rotate=False)
+                image_files.extend(pages)
+            image_files.sort()
+
         if not image_files:
             print(f"Skipping {doc_id}: No image files found.")
             continue
-            
+
         print(f"\nProcessing document: {doc_id} ({len(image_files)} pages)")
-        
+
         try:
             # Chạy toàn bộ pipeline cho document
             doc_json, page_blocks_dict = pipeline.process_document(doc_id, image_files)
@@ -101,15 +132,32 @@ def main():
             output_file = os.path.join(outputs_dir, f"{doc_id}.json")
             with open(output_file, "w", encoding="utf-8") as f:
                 json.dump(doc_json, f, ensure_ascii=False, indent=2)
-            
+
+            # Sinh báo cáo Markdown DỄ ĐỌC (khác với md_text ở trên - file đó
+            # phục vụ chunking/RAG, chứa block OCR thô; file này chỉ trình bày
+            # lại JSON đã trích xuất theo mục rõ ràng cho người đọc trực tiếp).
+            from src.report_generator import generate_readable_report
+            report_text = generate_readable_report(doc_json)
+            report_file = os.path.join(reports_dir, f"{doc_id}.md")
+            with open(report_file, "w", encoding="utf-8") as f:
+                f.write(report_text)
+            print(f"    -> Saved readable report to: {report_file}")
+
             print(f"\nSUCCESS: Document {doc_id} result saved to: {output_file}")
             print(json.dumps(doc_json, ensure_ascii=False, indent=2))
-                
+
+            # Tự động nhúng THÊM TỪNG PHẦN đúng tài liệu này vào ChromaDB
+            # (không đụng tới các tài liệu khác đã có) - để có thể hỏi-đáp
+            # ngay mà không cần chạy tay test_embedding.py.
+            from src.embedding_pipeline import add_document_embedding
+            _, n_chunks = add_document_embedding(doc_id, markdowns_dir=md_dir)
+            print(f"    -> Đã nhúng {n_chunks} chunks của {doc_id} vào ChromaDB.")
+
         except Exception as e:
             import traceback
             print(f"Error processing document {doc_id}: {e}")
             traceback.print_exc()
-            
+
     print("\n" + "=" * 80)
     print(" PIPELINE COMPLETED")
     print("=" * 80)

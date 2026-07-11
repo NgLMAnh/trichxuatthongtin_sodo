@@ -28,6 +28,16 @@ class SectionDetector:
         (r"^3\s+thong\s+tin\s+tai\s+san", "asset_info"),
         (r"^4\s+so\s+do\s+thua\s+dat", "land_diagram"),
         (r"^6\s+nhung\s+thay\s+doi\s+sau\s+khi\s+cap", "post_issue_changes"),
+        # Mẫu cũ đánh số La Mã KHÔNG có chữ "Mục" (VD "II-Thửa đất được quyền sử
+        # dụng", "III- Tài sản gắn liền với đất", "IV- Ghi chú", "V-Sơ đồ thửa đất").
+        # Neo ^ + \b để không đụng các dòng "Mục III..." của mẫu cũ có chữ "Mục"
+        # (đã map ở trên) hay tiêu đề giấy chứa cụm "tài sản gắn liền với đất".
+        (r"^iii\b.*tai\s+san\s+gan\s+lien", "asset_info"),
+        (r"^ii\b.*thua\s+dat", "land_info"),
+        (r"^v\b.*so\s+do\s+thua\s+dat", "land_diagram"),
+        # "IV- Ghi chú" không phải mục dữ liệu có cấu trúc -> đánh mốc "unknown"
+        # để nội dung ghi chú KHÔNG bị dính vào mục tài sản đứng ngay trước nó.
+        (r"^iv\b.*ghi\s+chu", "unknown"),
     ]
 
     def __init__(self, config):

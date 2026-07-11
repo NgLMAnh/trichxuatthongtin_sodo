@@ -75,7 +75,7 @@ class LayoutAnalyzer:
             rec=False,
         )
 
-    def analyze(self, image_path):
+    def analyze(self, image_path, image_bgr=None):
         """
         Phân tích layout của ảnh.
         Args:
@@ -85,8 +85,16 @@ class LayoutAnalyzer:
         """
         if not os.path.exists(image_path):
             raise FileNotFoundError(f"Image not found at: {image_path}")
-            
-        img = cv2.imread(image_path)
+
+        # cv2.imread() dùng codepage ANSI của hệ thống cho đường dẫn trên Windows,
+        # nên KHÔNG đọc được path chứa ký tự tiếng Việt có dấu (VD "Ô", "Ư") -
+        # âm thầm trả về None, không báo lỗi rõ ràng. Nhận ndarray BGR đã decode
+        # sẵn từ pipeline (tránh decode lại), fallback tự đọc unicode-safe.
+        img = image_bgr
+        if img is None:
+            with open(image_path, "rb") as f:
+                file_bytes = np.frombuffer(f.read(), dtype=np.uint8)
+            img = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
         if img is None:
             raise ValueError(f"Could not read image at: {image_path}")
             

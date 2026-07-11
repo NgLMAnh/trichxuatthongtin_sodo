@@ -1,4 +1,6 @@
 import os
+import re
+from src.text_utils import normalize_text
 from src.layout_analyzer import LayoutAnalyzer
 from src.ocr_engine import OCREngine
 from src.block_builder import BlockBuilder
@@ -26,11 +28,15 @@ class DocumentPipeline:
         """
         Xử lý một trang ảnh.
         """
+        # Decode ảnh 1 LẦN (BGR, an toàn unicode) rồi tái sử dụng cho cả layout
+        # analyzer lẫn OCR engine - tránh đọc/decode lại file 2-3 lần mỗi trang.
+        image_bgr = self.ocr_engine._read_image_bgr(image_path)
+
         print(f"    - Phân tích Layout: {os.path.basename(image_path)}")
-        layout = self.layout_analyzer.analyze(image_path)
-        
+        layout = self.layout_analyzer.analyze(image_path, image_bgr=image_bgr)
+
         print(f"    - Chạy OCR...")
-        ocr_results = self.ocr_engine.run_ocr(image_path, layout_blocks=layout["blocks"])
+        ocr_results = self.ocr_engine.run_ocr(image_path, layout_blocks=layout["blocks"], image_bgr=image_bgr)
         
         print(f"    - Xây dựng Structured Blocks...")
         blocks = self.block_builder.build(layout, ocr_results)
@@ -44,6 +50,17 @@ class DocumentPipeline:
         
         raw_fields = self.field_extractor.extract(blocks, sections, graph)
         norm_fields = normalize_fields(raw_fields)
+
+        # Mẫu cũ: mục "Tài sản gắn liền với đất" là 1 ĐOẠN MÔ TẢ TỰ DO (VD "Nhà
+        # hai tầng, tường gạch, sàn BTCT, mái ngói, diện tích xây dựng 136,2m²...")
+        # không có nhãn "Tên tài sản:" -> anchor không khớp, asset_name = None dù
+        # thông tin có trên giấy. Fallback: ghi NGUYÊN VĂN đoạn mô tả đó làm
+        # asset_name; các field con (diện tích sử dụng, hình thức/thời hạn sở hữu)
+        # vẫn chỉ điền khi có nhãn rõ ràng - không suy diễn từ mô tả.
+        if not norm_fields.get("asset_name"):
+            desc = self._asset_description_fallback(blocks, sections)
+            if desc:
+                norm_fields["asset_name"] = desc
 
         raw_change_history = self.change_extractor.extract(blocks, sections)
         change_history = normalize_change_history(raw_change_history)
@@ -67,6 +84,39 @@ class DocumentPipeline:
             "extra_fields": extra_fields,
         }
 
+    @staticmethod
+    def _asset_description_fallback(blocks, sections):
+        """Ghép nguyên văn các dòng trong mục 'Tài sản gắn liền với đất' (trừ
+        chính dòng tiêu đề mục) làm mô tả tài sản, khi anchor 'Tên tài sản'
+        không khớp (mẫu cũ viết mô tả tự do thay vì nhãn:giá trị)."""
+        block_ids = set(sections.get("asset_info", []))
+        if not block_ids:
+            return None
+
+        texts = []
+        for block in sorted(blocks, key=lambda b: b.get("reading_order", 0)):
+            if block.get("block_id") not in block_ids:
+                continue
+            text = (block.get("text") or "").strip()
+            if not text:
+                continue
+            norm = normalize_text(text)
+            # Bỏ dòng tiêu đề của chính mục (cả kiểu cũ lẫn kiểu đánh số mới)
+            if re.search(r"tai\s+san\s+gan\s+lien|thong\s+tin\s+tai\s+san", norm):
+                continue
+            # Bỏ block chữ ký/chức danh/con dấu (cùng dải toạ độ y với mục tài
+            # sản nên bị gán nhầm vào section) và block confidence thấp - chữ
+            # trong con dấu/chữ ký OCR ra rác (VD "TRONG THỊ CHỐNG NHÂN MINH")
+            # với confidence đặc trưng < 0.75, còn dòng mô tả thật ~0.9+.
+            if re.search(r"chu\s+tich|ky\s+ten|dong\s+dau|thay\s+mat|giam\s+doc", norm):
+                continue
+            if float(block.get("confidence", 1.0)) < 0.75:
+                continue
+            texts.append(text)
+
+        joined = " ".join(texts).strip()
+        return joined or None
+
     def _attach_sections_to_blocks(self, blocks, sections):
         block_lookup = {block.get("block_id"): block for block in blocks}
         for section_name, block_ids in sections.items():
@@ -81,7 +131,8 @@ class DocumentPipeline:
         """
         page_results = []
         page_blocks_dict = {}
-        
+        failed_pages = []
+
         for img_path in image_files:
             img_name = os.path.basename(img_path)
             print(f"  - Đang xử lý: {img_name}")
@@ -92,6 +143,20 @@ class DocumentPipeline:
                 for record in change_history:
                     record["page"] = img_name
 
+                # MỌI dòng chữ OCR đọc được trên trang (kể cả dòng không map vào
+                # field nào) - để không bỏ sót thông tin nào khỏi JSON kết quả,
+                # phục vụ yêu cầu "OCR tất cả các chữ và lưu thành field rõ ràng".
+                text_lines = [
+                    {
+                        "page": img_name,
+                        "section": b.get("section", "unknown"),
+                        "text": b.get("text", "").strip(),
+                        "confidence": round(float(b.get("confidence", 0.0)), 4),
+                    }
+                    for b in sorted(res["blocks"], key=lambda x: x.get("reading_order", 0))
+                    if b.get("text", "").strip()
+                ]
+
                 page_results.append({
                     "page_name": img_name,
                     # Phân loại page_type cho document_merger.
@@ -101,6 +166,7 @@ class DocumentPipeline:
                     "change_history": change_history,
                     "holders": res["holders"],
                     "extra_fields": res["extra_fields"],
+                    "text_lines": text_lines,
                 })
                 page_blocks_dict[img_name] = {
                     "blocks": res["blocks"],
@@ -113,8 +179,13 @@ class DocumentPipeline:
                 import traceback
                 print(f"    -> Error processing page {img_name}: {e}")
                 traceback.print_exc()
-                
+                # KHÔNG nuốt lỗi im lặng: ghi lại trang thất bại để merger phản ánh
+                # trong kết quả (người dùng biết trang nào thiếu, không tưởng đủ).
+                failed_pages.append({"page_name": img_name, "error": str(e)})
+
         # Merge các trang lại thành 1 JSON
         doc_json = merge_pages(doc_id, page_results)
-        
+        if failed_pages:
+            doc_json["failed_pages"] = failed_pages
+
         return doc_json, page_blocks_dict

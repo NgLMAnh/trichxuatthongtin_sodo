@@ -59,7 +59,10 @@ def merge_pages(document_id, page_results):
             "ownership_form": None,
             "ownership_term": None
         },
-        "extra_fields": []
+        "extra_fields": [],
+        # MỌI dòng chữ OCR đọc được (kể cả dòng chưa map vào field nào), gom theo
+        # section - đảm bảo không bỏ sót thông tin nào trên giấy khỏi JSON.
+        "full_text": []
     }
     seen_extra = set()
     
@@ -128,6 +131,9 @@ def merge_pages(document_id, page_results):
                 continue
             seen_extra.add(dedupe_key)
             doc_json["extra_fields"].append(item)
+
+        # full_text: nối mọi dòng chữ OCR của trang (giữ nguyên thứ tự đọc)
+        doc_json["full_text"].extend(page.get("text_lines", []))
 
     if doc_json["holders"]:
         # HolderExtractor khớp được (mẫu GCN hợp nhất) -> đồng bộ lại holder scalar

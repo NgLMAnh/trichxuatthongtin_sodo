@@ -32,10 +32,9 @@ def main():
     print("⏳ Đang kết nối tới mô hình AI qwen3:8b trên server hạ tầng...")
     try:
         llm = Ollama(
-            base_url="https://ocr.devforenv.com/api/chat",
-            model="qwen3:8b", 
-            temperature=0.0,
-            stream=False
+            base_url="https://ocr.devforenv.com",
+            model="qwen3:8b",
+            temperature=0.0
         )
     except Exception as e:
         print(f"Lỗi tải Ollama: {e}")

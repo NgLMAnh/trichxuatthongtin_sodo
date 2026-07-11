@@ -51,7 +51,7 @@ class SpatialGraph:
                     # Calculate a specific distance for 'below'
                     dy = max(0, b_y1 - a_y2)
                     dx = abs(a_x1 - b_x1) # Compare left alignment
-                    # To prevent skipping lines, dy MUST be the dominant factor. 
+                    # To prevent skipping lines, dy MUST be the dominant factor.
                     below_dist = dy + dx * 0.1
                     self.edges[a["block_id"]]["below"].append((b["block_id"], below_dist))
 

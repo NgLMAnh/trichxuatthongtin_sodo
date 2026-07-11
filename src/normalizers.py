@@ -1,5 +1,28 @@
 import re
 
+# Các cặp chữ<->số HAY BỊ VietOCR nhầm (VD "6" đọc thành "G", "0" thành "O").
+# CHỈ dùng cho field CHẮC CHẮN là số (CMND/CCCD, diện tích) - KHÔNG bao giờ áp
+# dụng cho tên/địa chỉ (sẽ phá chữ hợp lệ). Chỉ các cặp có độ tin cậy cao.
+_OCR_LETTER_TO_DIGIT = {
+    'G': '6', 'g': '6',
+    'O': '0', 'o': '0', 'Q': '0', 'D': '0',
+    'I': '1', 'l': '1', 'L': '1',
+    'S': '5', 's': '5',
+    'B': '8',
+    'Z': '2', 'z': '2',
+}
+
+def fix_numeric_ocr(s):
+    """Sửa lỗi OCR nhầm chữ<->số cho chuỗi ĐÁNG LẼ TOÀN SỐ. Chỉ thay khi chuỗi
+    chủ yếu là chữ số (>=50% ký tự là số) để tránh đổi nhầm chuỗi văn bản."""
+    if not s:
+        return s
+    digit_like = sum(1 for c in s if c.isdigit() or c in _OCR_LETTER_TO_DIGIT)
+    letters_all = sum(1 for c in s if c.isalnum())
+    if letters_all == 0 or digit_like / letters_all < 0.5:
+        return s
+    return ''.join(_OCR_LETTER_TO_DIGIT.get(c, c) for c in s)
+
 def normalize_text(text):
     """
     Standard text normalization (strip, collapse spaces).
@@ -24,44 +47,99 @@ def correct_ocr_typos(val):
 def clean_name_or_address(val):
     if not val:
         return ""
-    # Remove leading/trailing dots, spaces, underscores, colons, hyphens, slashes
-    val = re.sub(r'^[ \.\-_:\(\)\/]+', '', val)
-    val = re.sub(r'[ \.\-_:\(\)\/]+$', '', val)
+    # Remove leading/trailing dots, spaces, underscores, colons, hyphens, slashes,
+    # AND dấu phẩy/chấm phẩy cuối (VD "sở hữu chung," / "...Bình Chiều;" - đuôi
+    # dấu câu thừa từ OCR/cách trình bày trên giấy, không phải nội dung).
+    val = re.sub(r'^[ \.\-_:\(\)\/,;]+', '', val)
+    val = re.sub(r'[ \.\-_:\(\)\/,;]+$', '', val)
     # Remove large clusters of dots in between
     val = re.sub(r'\.{2,}', ' ', val)
     val = re.sub(r'_{2,}', ' ', val)
     # Collapse multiple spaces
     val = re.sub(r'\s+', ' ', val).strip()
-    
+
     # Correct OCR spelling mistakes
     val = correct_ocr_typos(val)
     return val
 
-def normalize_area(area_str):
+def normalize_area(area_str, min_valid=0.1, max_valid=1_000_000):
     """
-    Normalizes area value (e.g., '120,5 m2' -> 120.5).
+    Chuẩn hoá diện tích về float m². Xử lý đúng định dạng số Việt Nam:
+    - '513,893' hoặc '513.893'  -> 513.893  (1 dấu = phần thập phân)
+    - '6.748,4'                 -> 6748.4    (CÓ CẢ '.' và ',' => '.'=ngăn nghìn, ','=thập phân)
+    - '6748,4m²' / '509,0'      -> 6748.4 / 509.0
+    Trả về None nếu ngoài khoảng hợp lý [min_valid, max_valid] (lọc rác OCR).
     """
     if not area_str:
         return None
-    # Replace comma with dot
-    val = area_str.replace(",", ".")
-    # Find all float-like numbers
-    match = re.search(r'\d+(?:\.\d+)?', val)
-    if match:
-        try:
-            return float(match.group(0))
-        except ValueError:
-            return None
-    return None
+    s = str(area_str)
+    # Bỏ đơn vị đo TRƯỚC (m², m2, m?, "mét vuông") - nếu không, chữ số '2' trong
+    # "m2" sẽ dính vào con số (VD "120,5 m2" -> "120,52" sai).
+    s = re.sub(r'(?i)\s*m\s*[2²?]?', '', s)
+    s = re.sub(r'(?i)mét\s*vuông', '', s)
+    # Sửa lỗi OCR chữ<->số cho phần diện tích (VD "5O9" -> "509", "6G8" -> "668")
+    s = fix_numeric_ocr(s)
+    # Chỉ giữ chữ số, '.', ',' - bỏ ký tự còn lại
+    s = re.sub(r'[^0-9.,]', '', s)
+    if not s:
+        return None
+
+    if '.' in s and ',' in s:
+        # Định dạng VN: '.' ngăn nghìn, ',' thập phân -> bỏ '.', đổi ',' thành '.'
+        s = s.replace('.', '').replace(',', '.')
+    else:
+        # Chỉ 1 loại dấu -> coi là dấu thập phân (giữ nguyên hành vi cũ cho
+        # '513.893'/'513,893'); chuẩn hoá về '.'
+        s = s.replace(',', '.')
+        # Nếu còn nhiều dấu '.' (VD OCR '6.748.4'), chỉ giữ dấu cuối làm thập phân
+        if s.count('.') > 1:
+            head, _, tail = s.rpartition('.')
+            s = head.replace('.', '') + '.' + tail
+
+    match = re.search(r'\d+(?:\.\d+)?', s)
+    if not match:
+        return None
+    try:
+        value = float(match.group(0))
+    except ValueError:
+        return None
+    if value < min_valid or value > max_valid:
+        return None
+    return value
+
+# Tiền tố vai trò/quan hệ hay dính vào ĐẦU tên do OCR gộp dòng ("VÀ VỢ: BÀ ...").
+_NAME_ROLE_PREFIX_RE = re.compile(
+    r'^\s*(?:và\s+(?:vợ|chồng)\s*:?\s*)?(?:ông|bà|anh|chị)\s*:?\s*',
+    re.IGNORECASE,
+)
 
 def clean_name(val):
     if not val:
         return ""
+    # Cắt đuôi ", CMND/CCCD: <số>" hoặc "CCCD số ..." dính vào tên (mẫu hợp nhất
+    # gộp tên + giấy tờ trong 1 dòng), tránh tên chứa cả số căn cước.
+    val = re.sub(r'(?i)[,;]?\s*(?:CMND|CCCD|số\s*định\s*danh)\b.*$', '', val)
     # Strip "sinh năm" or "sn" and anything after it from names
     val = re.sub(r'(?i)\b(?:sinh năm|năm sinh|sn)\b.*$', '', val)
+    # Bỏ tiền tố vai trò/quan hệ ở đầu ("VÀ VỢ:", "BÀ", "Ông")
+    val = _NAME_ROLE_PREFIX_RE.sub('', val)
     # Use generic clean up
     val = clean_name_or_address(val)
     return val
+
+def normalize_birthday(val, min_year=1900, max_year=2025):
+    """Chuẩn hoá năm sinh: chỉ chấp nhận năm 4 chữ số trong khoảng hợp lệ,
+    loại rác OCR (mảnh số CCCD, năm cấp giấy, số thửa 4 chữ số...)."""
+    if not val:
+        return None
+    text = normalize_text(str(val))
+    m = re.search(r'\b(1\d{3}|20\d{2})\b', text)
+    if not m:
+        return None
+    year = int(m.group(1))
+    if year < min_year or year > max_year:
+        return None
+    return str(year)
 
 def normalize_fields(extracted_data):
     """
@@ -114,8 +192,7 @@ def normalize_fields(extracted_data):
         
     # 7. birthday
     if "birthday" in extracted_data:
-        val = extracted_data["birthday"]
-        normalized["birthday"] = normalize_text(val) if val else None
+        normalized["birthday"] = normalize_birthday(extracted_data["birthday"])
 
     # 8. asset_name (Mục "3. Thông tin tài sản...")
     if "asset_name" in extracted_data:
@@ -146,7 +223,7 @@ def normalize_holders(holders):
             "role": holder.get("role"),
             "name": clean_name(holder.get("name")) or None,
             "id_number": id_number,
-            "birthday": normalize_text(holder.get("birthday")) if holder.get("birthday") else None,
+            "birthday": normalize_birthday(holder.get("birthday")),
             "address": clean_name_or_address(holder.get("address")) or None,
         })
     return normalized
